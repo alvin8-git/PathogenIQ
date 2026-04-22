@@ -1,0 +1,36 @@
+# Large sequencing data files
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bam.bai
+*.sam
+*.cram
+
+# Claude / editor internals
+.claude/
+.omc/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Nextflow work directories
+work/
+.nextflow/
+.nextflow.log*
+
+# Database files (too large for git)
+*.db
+*.sqlite
+*.h5
+*.hdf5
+
+# Temporary / scratch
+tmp/
+scratch/
+*.tmp
