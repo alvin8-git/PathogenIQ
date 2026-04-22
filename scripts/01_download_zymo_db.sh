@@ -64,7 +64,7 @@ while IFS= read -r fna; do
   sig="${SIG_DIR}/${base}.sig"
   if [ ! -f "${sig}" ]; then
     echo "  Sketching ${base}..."
-    "${SOURMASH}" sketch dna -p k=31,scaled=1000 "${fna}" -o "${sig}" --quiet
+    "${SOURMASH}" sketch dna -p k=31,scaled=1000 "${fna}" -o "${sig}"
   else
     echo "  Skipping ${base} (already sketched)"
   fi
