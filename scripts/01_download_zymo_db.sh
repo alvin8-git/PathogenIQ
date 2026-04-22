@@ -45,6 +45,7 @@ ncbi-genome-download \
   -o "${GENOME_DIR}" \
   -p ${THREADS} \
   -r 3 \
+  -l all \
   all
 
 echo "=== Step 2: Decompress and flatten genome files ==="

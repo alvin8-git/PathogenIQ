@@ -18,7 +18,6 @@ Usage:
 
 import argparse
 import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -84,17 +83,18 @@ TIER1_PATHOGENS = {
     "Adenovirus C":                     "GCF_000858705.1",
     "BK polyomavirus":                  "GCF_000864765.1",
     "JC polyomavirus":                  "GCF_000864105.1",
-    "Hepatitis B virus":                "GCF_000864765.1",
+    "Hepatitis B virus":                "GCF_000861765.1",   # NC_003977 ayw strain
     "Human papillomavirus 16":          "GCF_000863645.1",
 
     # ── RNA Viruses ───────────────────────────────────────────────────────
     "SARS-CoV-2":                       "GCF_009858895.2",
     "Influenza A virus H1N1":           "GCF_001343785.1",
-    "Influenza B virus":                "GCF_000864765.1",
-    "Hepatitis C virus":                "GCF_000864765.1",
-    "HIV-1":                            "GCF_000864765.1",
-    "Dengue virus":                     "GCF_000862125.1",
-    "West Nile virus":                  "GCF_000864105.1",
+    # TODO: add correct GCF accessions for these RNA viruses once verified:
+    #   "Influenza B virus"  — was GCF_000864765.1 (duplicate of BK polyomavirus)
+    #   "Hepatitis C virus"  — was GCF_000864765.1 (duplicate of BK polyomavirus)
+    #   "HIV-1"              — was GCF_000864765.1 (duplicate of BK polyomavirus)
+    #   "Dengue virus"       — was GCF_000862125.1 (duplicate of EBV)
+    #   "West Nile virus"    — was GCF_000864105.1 (duplicate of JC polyomavirus)
     "Rabies lyssavirus":                "GCF_000859085.1",
     "Enterovirus A":                    "GCF_000859065.1",   # EV-A71
 
@@ -120,7 +120,15 @@ TIER1_PATHOGENS = {
 
 # Accessions with known issues — skip these
 _SKIP = {
-    "GCF_000001405.40",   # this is GRCh38 (human), not H. influenzae
+    "GCF_000001405.40",   # GRCh38 (human genome), not H. influenzae
+    # Not available via ncbi-genome-download (refseq + genbank both return 0 results).
+    # Replace with updated accessions when found:
+    "GCF_000001469.1",    # H. influenzae Rd KW20 — try GCF_000001469.2
+    "GCF_000863945.1",    # HHV-8/KSHV
+    "GCF_000149245.2",    # Cryptococcus neoformans JEC21
+    "GCF_000006445.1",    # Histoplasma capsulatum
+    "GCF_000002725.1",    # Leishmania major Friedlin
+    "GCF_000401635.1",    # Mucor circinelloides CBS277.49
 }
 
 VALID_ACCESSIONS = {
@@ -128,14 +136,10 @@ VALID_ACCESSIONS = {
     if acc not in _SKIP
 }
 
-
 def download_genome(name: str, accession: str, genome_dir: Path, retries: int = 3) -> tuple[str, bool, str]:
-    """Download a single genome by accession. Returns (name, success, message)."""
-    target = genome_dir / accession
-    if target.exists() and any(target.rglob("*.fna.gz")):
+    """Download a single genome; tries refseq then genbank."""
+    if list(genome_dir.rglob(f"{accession}*.fna.gz")):
         return name, True, f"already present ({accession})"
-
-    # Try refseq first; fall back to genbank for eukaryotes not in refseq
     for section in ("refseq", "genbank"):
         cmd = [
             "ncbi-genome-download",
@@ -144,13 +148,13 @@ def download_genome(name: str, accession: str, genome_dir: Path, retries: int = 
             "-o", str(genome_dir),
             "-r", str(retries),
             "-s", section,
+            "-l", "all",
             "all",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
+        if list(genome_dir.rglob(f"{accession}*.fna.gz")):
             return name, True, f"downloaded from {section} ({accession})"
     return name, False, f"FAILED ({accession}): {result.stderr.strip()[:120]}"
-
 
 def sketch_genome(fna_path: Path, sig_dir: Path) -> tuple[Path, bool]:
     """Sketch a single genome with sourmash. Returns (path, success)."""
@@ -192,12 +196,13 @@ def main():
         targets = {k: v for k, v in VALID_ACCESSIONS.items()
                    if any(n in k for n in zymo_names)}
 
-    print(f"Downloading {len(targets)} genomes with {args.threads} threads...")
+    print(f"Downloading {len(targets)} genomes with {min(args.threads, 4)} threads...")
     print(f"Output directory: {outdir}\n")
 
-    # ── Step 1: Parallel downloads ─────────────────────────────────────────
+    # ── Step 1: Per-accession downloads (isolated failures, refseq→genbank fallback) ──
     failed = []
-    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+    dl_workers = min(args.threads, 4)  # >4 triggers NCBI rate-limiting
+    with ThreadPoolExecutor(max_workers=dl_workers) as executor:
         futures = {
             executor.submit(download_genome, name, acc, genome_dir): name
             for name, acc in targets.items()
