@@ -35,16 +35,19 @@ class ReportEntry:
     ci_upper: float
     read_count: int
     specimen_type: SpecimenType
+    contaminant_risk: bool = False
 
     @property
     def grade(self) -> EvidenceGrade:
         min_reads = _MIN_READS.get(self.specimen_type, 5)
         ci_width = self.ci_upper - self.ci_lower
-        if self.read_count >= min_reads and ci_width <= _MAX_CI_WIDTH_A:
+        if self.read_count >= min_reads and ci_width <= _MAX_CI_WIDTH_A and not self.contaminant_risk:
             return EvidenceGrade.A
-        if self.read_count >= min_reads:
+        if self.read_count >= min_reads and not self.contaminant_risk:
             return EvidenceGrade.B
-        return EvidenceGrade.C
+        if self.read_count >= min_reads:
+            return EvidenceGrade.C
+        return EvidenceGrade.X
 
 
 def write_report(

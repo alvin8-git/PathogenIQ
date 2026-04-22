@@ -75,7 +75,7 @@ def test_evidence_grade_blood_low_reads():
         read_count=1,
         specimen_type=SpecimenType.BLOOD,
     )
-    assert entry.grade == EvidenceGrade.C
+    assert entry.grade == EvidenceGrade.X
 
 
 def test_tsv_columns(tmp_path):
