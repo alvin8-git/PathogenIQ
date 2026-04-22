@@ -135,18 +135,20 @@ def download_genome(name: str, accession: str, genome_dir: Path, retries: int = 
     if target.exists() and any(target.rglob("*.fna.gz")):
         return name, True, f"already present ({accession})"
 
-    cmd = [
-        "ncbi-genome-download",
-        "-A", accession,
-        "-F", "fasta",
-        "-o", str(genome_dir),
-        "-r", str(retries),
-        "-s", "refseq",
-        "all",
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode == 0:
-        return name, True, f"downloaded ({accession})"
+    # Try refseq first; fall back to genbank for eukaryotes not in refseq
+    for section in ("refseq", "genbank"):
+        cmd = [
+            "ncbi-genome-download",
+            "-A", accession,
+            "-F", "fasta",
+            "-o", str(genome_dir),
+            "-r", str(retries),
+            "-s", section,
+            "all",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return name, True, f"downloaded from {section} ({accession})"
     return name, False, f"FAILED ({accession}): {result.stderr.strip()[:120]}"
 
 
@@ -216,9 +218,11 @@ def main():
     print("\nDecompressing genomes...")
     gz_files = list(genome_dir.rglob("*.fna.gz"))
     for gz in gz_files:
-        fna = genome_dir / (gz.stem)  # removes .gz
+        fna = gz.parent / gz.stem  # removes .gz, keeps full path
         if not fna.exists():
-            subprocess.run(["gunzip", "-k", str(gz)], check=True)
+            result = subprocess.run(["gunzip", "-k", str(gz)], capture_output=True)
+            if result.returncode != 0:
+                print(f"  WARNING: skipping corrupt/non-gzip file: {gz.name}")
 
     # ── Step 3: Parallel sketching ─────────────────────────────────────────
     fna_files = list(genome_dir.rglob("*.fna"))
