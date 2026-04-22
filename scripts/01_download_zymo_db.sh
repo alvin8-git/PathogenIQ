@@ -54,24 +54,25 @@ find "${GENOME_DIR}" -name "*.fna.gz" | while read -r gz; do
   gunzip -c "${gz}" > "${GENOME_DIR}/${name}.fna"
 done
 
-echo "=== Step 3: Sketch genomes in parallel (sourmash, k=31, scaled=1000) ==="
+echo "=== Step 3: Sketch genomes (sourmash, k=31, scaled=1000) ==="
 
-# Use GNU parallel if available, otherwise xargs -P
-FASTA_LIST=$(find "${GENOME_DIR}" -name "*.fna" | tr '\n' ' ')
+SOURMASH=$(command -v sourmash) || { echo "ERROR: sourmash not found. Run: pip install sourmash"; exit 1; }
+echo "Using sourmash: ${SOURMASH}"
 
-if command -v parallel &>/dev/null; then
-  find "${GENOME_DIR}" -name "*.fna" | \
-    parallel -j ${THREADS} \
-    sourmash sketch dna -p k=31,scaled=1000 {} -o "${SIG_DIR}/{/.}.sig"
-else
-  find "${GENOME_DIR}" -name "*.fna" | \
-    xargs -P ${THREADS} -I{} bash -c \
-    'sourmash sketch dna -p k=31,scaled=1000 "$1" -o "'"${SIG_DIR}"'/$(basename "$1" .fna).sig"' _ {}
-fi
+while IFS= read -r fna; do
+  base=$(basename "${fna}" .fna)
+  sig="${SIG_DIR}/${base}.sig"
+  if [ ! -f "${sig}" ]; then
+    echo "  Sketching ${base}..."
+    "${SOURMASH}" sketch dna -p k=31,scaled=1000 "${fna}" -o "${sig}" --quiet
+  else
+    echo "  Skipping ${base} (already sketched)"
+  fi
+done < <(find "${GENOME_DIR}" -name "*.fna")
 
 echo "=== Step 4: Build sourmash SBT index ==="
 
-sourmash index \
+"${SOURMASH}" index \
   --ksize 31 \
   "${DB_OUT}" \
   "${SIG_DIR}"/*.sig
