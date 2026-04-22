@@ -137,11 +137,11 @@ def download_genome(name: str, accession: str, genome_dir: Path, retries: int = 
 
     cmd = [
         "ncbi-genome-download",
-        "--accessions", accession,
-        "--formats", "fasta",
-        "--output-folder", str(genome_dir),
-        "--retries", str(retries),
-        "--section", "refseq",
+        "-A", accession,
+        "-F", "fasta",
+        "-o", str(genome_dir),
+        "-r", str(retries),
+        "-s", "refseq",
         "all",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)

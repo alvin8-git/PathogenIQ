@@ -23,29 +23,28 @@ echo "=== Step 1: Download ZymoBIOMICS reference genomes in parallel ==="
 
 # NCBI RefSeq accessions for ZymoBIOMICS D6300 community members
 # These are the representative/reference strains closest to the ZymoBIOMICS material
-declare -A ACCESSIONS=(
-  ["Pseudomonas_aeruginosa_PAO1"]="GCF_000006765.1"
-  ["Escherichia_coli_K12_MG1655"]="GCF_000005845.2"
-  ["Salmonella_enterica_LT2"]="GCF_000006945.2"
-  ["Lactobacillus_fermentum_ATCC14931"]="GCF_000759415.1"
-  ["Enterococcus_faecalis_V583"]="GCF_000007785.1"
-  ["Staphylococcus_aureus_NCTC8325"]="GCF_000013425.1"
-  ["Listeria_monocytogenes_EGDe"]="GCF_000196035.1"
-  ["Bacillus_subtilis_168"]="GCF_000009045.1"
-  ["Saccharomyces_cerevisiae_S288C"]="GCF_000146045.2"
-  ["Cryptococcus_neoformans_H99"]="GCF_000149245.2"
-)
+ACCESSION_LIST="GCF_000006765.1,GCF_000005845.2,GCF_000006945.2,GCF_000759415.1,GCF_000007785.1,GCF_000013425.1,GCF_000196035.1,GCF_000009045.1,GCF_000146045.2,GCF_000149245.2"
 
-# Build comma-separated accession list for ncbi-genome-download
-ACCESSION_LIST=$(IFS=,; echo "${ACCESSIONS[*]}")
+# Organism legend:
+#   GCF_000006765.1  Pseudomonas aeruginosa PAO1
+#   GCF_000005845.2  Escherichia coli K-12 MG1655
+#   GCF_000006945.2  Salmonella enterica LT2
+#   GCF_000759415.1  Lactobacillus fermentum ATCC14931
+#   GCF_000007785.1  Enterococcus faecalis V583
+#   GCF_000013425.1  Staphylococcus aureus NCTC8325
+#   GCF_000196035.1  Listeria monocytogenes EGD-e
+#   GCF_000009045.1  Bacillus subtilis 168
+#   GCF_000146045.2  Saccharomyces cerevisiae S288C
+#   GCF_000149245.2  Cryptococcus neoformans H99
 
 # Download all 10 genomes in parallel (ncbi-genome-download handles concurrency)
+# Correct short flags: -A accessions, -F formats, -o output, -p parallel, -r retries
 ncbi-genome-download \
-  --accessions "${ACCESSION_LIST}" \
-  --formats fasta \
-  --output-folder "${GENOME_DIR}" \
-  --parallel ${THREADS} \
-  --retries 3 \
+  -A "${ACCESSION_LIST}" \
+  -F fasta \
+  -o "${GENOME_DIR}" \
+  -p ${THREADS} \
+  -r 3 \
   all
 
 echo "=== Step 2: Decompress and flatten genome files ==="
