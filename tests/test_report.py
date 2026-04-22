@@ -1,0 +1,96 @@
+import json
+import csv
+from pathlib import Path
+import numpy as np
+import pytest
+from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
+from pathogeniq.em import EMResult
+from pathogeniq.report import write_report, ReportEntry, EvidenceGrade
+
+
+def _cfg(tmp_path):
+    return PipelineConfig(
+        input_fastq=tmp_path / "in.fastq.gz",
+        read_type=ReadType.SHORT,
+        specimen_type=SpecimenType.BLOOD,
+        output_dir=tmp_path,
+        db_tier1=tmp_path / "db",
+        host_reference=tmp_path / "h.fa",
+    )
+
+
+def _em_result():
+    return EMResult(
+        abundances=np.array([0.70, 0.28, 0.02]),
+        n_reads=1000,
+        n_organisms=3,
+        iterations=45,
+    )
+
+
+def test_write_report_creates_tsv(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    names = ["Escherichia coli", "Klebsiella pneumoniae", "Cutibacterium acnes"]
+    lower = np.array([0.65, 0.23, 0.005])
+    upper = np.array([0.75, 0.33, 0.04])
+    write_report(cfg, names, em, lower, upper)
+    tsv = tmp_path / "report" / "pathogeniq_report.tsv"
+    assert tsv.exists()
+
+
+def test_write_report_creates_json(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    names = ["Escherichia coli", "Klebsiella pneumoniae", "Cutibacterium acnes"]
+    lower = np.array([0.65, 0.23, 0.005])
+    upper = np.array([0.75, 0.33, 0.04])
+    write_report(cfg, names, em, lower, upper)
+    jsn = tmp_path / "report" / "pathogeniq_report.json"
+    assert jsn.exists()
+    with open(jsn) as f:
+        data = json.load(f)
+    assert "findings" in data
+    assert len(data["findings"]) == 3
+
+
+def test_evidence_grade_blood_high_confidence():
+    entry = ReportEntry(
+        organism="Escherichia coli",
+        abundance=0.70,
+        ci_lower=0.65,
+        ci_upper=0.75,
+        read_count=700,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.grade == EvidenceGrade.A
+
+
+def test_evidence_grade_blood_low_reads():
+    entry = ReportEntry(
+        organism="Cutibacterium acnes",
+        abundance=0.001,
+        ci_lower=0.0,
+        ci_upper=0.01,
+        read_count=1,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.grade == EvidenceGrade.C
+
+
+def test_tsv_columns(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    names = ["Organism A", "Organism B", "Organism C"]
+    lower = np.array([0.60, 0.20, 0.00])
+    upper = np.array([0.80, 0.36, 0.04])
+    write_report(cfg, names, em, lower, upper)
+    tsv = tmp_path / "report" / "pathogeniq_report.tsv"
+    with open(tsv) as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        rows = list(reader)
+    assert "organism" in rows[0]
+    assert "abundance_pct" in rows[0]
+    assert "ci_lower_pct" in rows[0]
+    assert "ci_upper_pct" in rows[0]
+    assert "grade" in rows[0]
