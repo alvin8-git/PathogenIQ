@@ -1,8 +1,6 @@
 import json
 import csv
-from pathlib import Path
 import numpy as np
-import pytest
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 from pathogeniq.em import EMResult
 from pathogeniq.report import write_report, ReportEntry, EvidenceGrade
@@ -94,3 +92,36 @@ def test_tsv_columns(tmp_path):
     assert "ci_lower_pct" in rows[0]
     assert "ci_upper_pct" in rows[0]
     assert "grade" in rows[0]
+    assert "contaminant_risk" in rows[0]
+
+
+def test_report_json_includes_contaminant_risk(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    names = ["Staphylococcus aureus", "Cutibacterium acnes", "Escherichia coli"]
+    lower = np.array([0.60, 0.01, 0.20])
+    upper = np.array([0.80, 0.10, 0.36])
+    write_report(cfg, names, em, lower, upper)
+    json_path = tmp_path / "report" / "pathogeniq_report.json"
+    with open(json_path) as f:
+        data = json.load(f)
+
+    findings = {f["organism"]: f for f in data["findings"]}
+    assert findings["Staphylococcus aureus"]["contaminant_risk"] is False
+    assert findings["Cutibacterium acnes"]["contaminant_risk"] is True
+    assert findings["Escherichia coli"]["contaminant_risk"] is False
+
+
+def test_report_tsv_includes_contaminant_risk(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    names = ["Staphylococcus aureus", "Cutibacterium acnes"]
+    lower = np.array([0.60, 0.01])
+    upper = np.array([0.80, 0.10])
+    write_report(cfg, names, em, lower, upper)
+    tsv = tmp_path / "report" / "pathogeniq_report.tsv"
+    with open(tsv) as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        rows = {r["organism"]: r for r in reader}
+    assert rows["Staphylococcus aureus"]["contaminant_risk"] == "False"
+    assert rows["Cutibacterium acnes"]["contaminant_risk"] == "True"

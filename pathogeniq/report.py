@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import PipelineConfig, SpecimenType
+from .contaminants import flag_contaminants
 from .em import EMResult
 
 
@@ -73,13 +74,14 @@ def write_report(
         )
         for i, name in enumerate(organism_names)
     ]
+    entries = flag_contaminants(entries)
     entries.sort(key=lambda e: e.abundance, reverse=True)
 
     tsv_path = out / "pathogeniq_report.tsv"
     with open(tsv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["organism", "abundance_pct", "ci_lower_pct", "ci_upper_pct", "read_count", "grade"],
+            fieldnames=["organism", "abundance_pct", "ci_lower_pct", "ci_upper_pct", "read_count", "grade", "contaminant_risk"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -91,6 +93,7 @@ def write_report(
                 "ci_upper_pct": f"{e.ci_upper * 100:.2f}",
                 "read_count": e.read_count,
                 "grade": e.grade.value,
+                "contaminant_risk": e.contaminant_risk,
             })
 
     json_path = out / "pathogeniq_report.json"
@@ -107,6 +110,7 @@ def write_report(
                 "ci_upper_pct": round(e.ci_upper * 100, 2),
                 "read_count": e.read_count,
                 "grade": e.grade.value,
+                "contaminant_risk": e.contaminant_risk,
             }
             for e in entries
         ],

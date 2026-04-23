@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pathogeniq.config import SpecimenType
-from pathogeniq.report import ReportEntry
+
+if TYPE_CHECKING:
+    from pathogeniq.report import ReportEntry
 
 
 # Organisms that are routine contaminants in specific specimen types.
