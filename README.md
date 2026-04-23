@@ -19,6 +19,8 @@ A lightweight, clinical-grade metagenomic pathogen detection pipeline for Illumi
 - **All specimen types** — blood, CSF, BAL, tissue, with specimen-specific interpretation priors
 - **Tiered pathogen database** — WHO Priority Pathogens, CDC Select Agents, common clinical viruses, fungi, parasites
 - **Novel pathogen flagging** — hits outside the curated database are surfaced for review
+- **AMR gene detection** — ABRicate+CARD scans non-human reads for antimicrobial resistance genes (e.g., mecA, blaCTX-M-15)
+- **PDF clinical report** — formatted single-page report with grade colour-coding, AMR summary, and research-use disclaimer
 
 ---
 
@@ -36,7 +38,8 @@ A lightweight, clinical-grade metagenomic pathogen detection pipeline for Illumi
 | **Host removal** | BWA | Bowtie2 / KneadData | BWA-MEM2 / minimap2 |
 | **False positive control** | Minimum read filter | None | **Graded evidence system** |
 | **Novel pathogen alert** | No | No | **Yes** |
-| **Clinical report** | Web UI only | None | **Structured JSON + TSV** |
+| **Clinical report** | Web UI only | None | **JSON + TSV + PDF** |
+| **AMR detection** | No | None | **ABRicate + CARD** |
 | **Deployment** | Cloud-only ($$) | Local | **Hybrid (free self-hosted)** |
 | **ZymoBIOMICS validated** | Yes | Partial | **Yes (integration tests)** |
 
@@ -75,8 +78,13 @@ FASTQ (SR or LR)
  └──────────────────┘
      │
      ▼
+ ┌─────────────────┐    ABRicate + CARD
+ │ AMR screening   │──→ resistance genes per organism
+ └─────────────────┘
+     │
+     ▼
  ┌─────────────────┐    Grade A/B/C/X per organism
- │ Clinical report │──→ JSON + TSV report
+ │ Clinical report │──→ JSON + TSV + PDF report
  └─────────────────┘
 ```
 
@@ -150,7 +158,8 @@ pathogeniq run \
 results/sample/
 ├── report/
 │   ├── pathogeniq_report.json   # Structured clinical report
-│   └── pathogeniq_report.tsv    # Tabular summary
+│   ├── pathogeniq_report.tsv    # Tabular summary
+│   └── pathogeniq_report.pdf    # Formatted clinical PDF
 ├── qc/                          # fastp HTML + JSON
 ├── host_removed.fq.gz           # Microbial reads only
 └── alignments/                  # Per-organism PAF files
@@ -166,6 +175,8 @@ results/sample/
 | `ci_lower` / `ci_upper` | Bootstrap 95% confidence interval |
 | `mapped_reads` | Reads assigned by EM |
 | `grade` | Evidence grade: A (high), B (moderate), C (low), X (insufficient) |
+| `contaminant_risk` | Flagged if organism is a known specimen-specific contaminant |
+| `amr_genes` | Detected antimicrobial resistance genes linked to this organism |
 | `specimen` | Specimen type used for grading thresholds |
 
 ---
@@ -212,9 +223,12 @@ pathogeniq/
 ├── qc.py            # fastp / Chopper wrapper
 ├── host_remove.py   # BWA-MEM2 / minimap2 host subtraction
 ├── sketch.py        # sourmash sketch + SBT search
-├── em.py            # EM abundance estimation + bootstrap CI
 ├── align.py         # Targeted alignment (minimap2)
+├── em.py            # EM abundance estimation + bootstrap CI
 ├── report.py        # Evidence grading + JSON/TSV output
+├── contaminants.py  # Specimen-aware contaminant prior registry
+├── amr.py           # ABRicate + CARD resistance gene detection
+├── pdf_report.py    # ReportLab clinical PDF generator
 └── cli.py           # Click CLI entry point
 
 scripts/
@@ -233,7 +247,7 @@ tests/
 
 ## Roadmap
 
-- [ ] Plan 2: Clinical interpretation engine (AMR overlay via ABRicate+CARD, PDF report)
+- [x] Plan 2: Clinical interpretation engine (AMR overlay via ABRicate+CARD, PDF report)
 - [ ] Plan 3: Nextflow orchestration (local Docker, SLURM, AWS Batch)
 - [ ] Plan 4: Validation framework (ROC curves, benchmark suite)
 - [ ] Web dashboard for clinical users
