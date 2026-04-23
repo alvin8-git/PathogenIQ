@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Download GRCh38 + decoy sequences and index for BWA-MEM2 and minimap2.
+# Download GRCh38.p14 (single-file) + PhiX decoy and index for BWA-MEM2 / minimap2.
 #
-# Runtime: ~30-60 min (download) + ~60 min (BWA-MEM2 index)
+# Runtime: ~20-40 min download + ~60 min BWA-MEM2 index
 # Output:  databases/human_ref/GRCh38_decoy.fa + index files
 #
-# Prerequisites:
+# RAM requirement: BWA-MEM2 index needs ~64 GB RAM.
+#                  If RAM < 64 GB, only minimap2 index is built (usable for both SR and LR).
+#
+# Prerequisites (install before running):
 #   conda install -c bioconda bwa-mem2 minimap2 samtools
-#   (bwa-mem2 index requires ~64 GB RAM for GRCh38)
 
 set -euo pipefail
 
@@ -14,76 +16,92 @@ OUTDIR="databases/human_ref"
 THREADS=${1:-16}
 mkdir -p "${OUTDIR}"
 
-echo "=== Step 1: Download GRCh38 primary assembly + decoy sequences ==="
+# ── Check required tools ───────────────────────────────────────────────────
+for tool in bwa-mem2 minimap2 samtools; do
+  if ! command -v "${tool}" &>/dev/null; then
+    echo "ERROR: ${tool} not found."
+    echo "Install with: conda install -c bioconda bwa-mem2 minimap2 samtools"
+    exit 1
+  fi
+done
 
-# Primary assembly (no alt contigs — cleaner for metagenomics)
-if [ ! -f "${OUTDIR}/GRCh38_no_alt.fa.gz" ]; then
+COMBINED="${OUTDIR}/GRCh38_decoy.fa"
+
+echo "=== Step 1: Download GRCh38.p14 primary assembly (single file, ~900 MB) ==="
+
+GRCh38_GZ="${OUTDIR}/GRCh38.p14_genomic.fna.gz"
+if [ ! -f "${GRCh38_GZ}" ]; then
   curl -C - --retry 5 --retry-delay 10 -L \
-    "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_assembly_structure/Primary_Assembly/assembled_chromosomes/FASTA/chroms/" \
-    -o "${OUTDIR}/GRCh38_primary.html"
-
-  # Download chromosomes 1-22, X, Y, M in parallel
-  echo "Downloading chromosomes in parallel..."
-  for CHR in {1..22} X Y M; do
-    URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_assembly_structure/Primary_Assembly/assembled_chromosomes/FASTA/chr${CHR}.fna.gz"
-    curl -C - --retry 5 -L -o "${OUTDIR}/chr${CHR}.fna.gz" "${URL}" &
-  done
-  wait
-  echo "All chromosomes downloaded."
+    "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz" \
+    -o "${GRCh38_GZ}"
+  echo "GRCh38.p14 downloaded."
 else
-  echo "GRCh38 already downloaded, skipping."
+  echo "GRCh38.p14 already downloaded, skipping."
 fi
 
-echo "=== Step 2: Download decoy sequences (viral, unmapped) ==="
+echo "=== Step 2: Download PhiX control genome (spike-in contaminant) ==="
 
-# hs37d5 decoy — commonly used set of known non-human contaminants
-DECOY_URL="https://ftp-trace.ncbi.nih.gov/1000genomes/ftp/technical/reference/phase2_reference_assembly_sequence/hs37d5.fa.gz"
-if [ ! -f "${OUTDIR}/hs37d5_decoy.fa.gz" ]; then
-  curl -C - --retry 5 -L -o "${OUTDIR}/hs37d5_decoy.fa.gz" "${DECOY_URL}" &
+PHIX_GZ="${OUTDIR}/phix.fna.gz"
+if [ ! -f "${PHIX_GZ}" ]; then
+  curl -C - --retry 5 -L \
+    "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/819/615/GCF_000819615.1_ViralProj14015/GCF_000819615.1_ViralProj14015_genomic.fna.gz" \
+    -o "${PHIX_GZ}"
+  echo "PhiX downloaded."
+else
+  echo "PhiX already downloaded."
 fi
-
-# PhiX control genome
-PHIX_URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/819/615/GCF_000819615.1_ViralProj14015/GCF_000819615.1_ViralProj14015_genomic.fna.gz"
-if [ ! -f "${OUTDIR}/phix.fna.gz" ]; then
-  curl -C - --retry 5 -L -o "${OUTDIR}/phix.fna.gz" "${PHIX_URL}" &
-fi
-
-wait
-echo "Decoy sequences downloaded."
 
 echo "=== Step 3: Concatenate into single reference ==="
 
-COMBINED="${OUTDIR}/GRCh38_decoy.fa"
 if [ ! -f "${COMBINED}" ]; then
-  gunzip -c "${OUTDIR}"/chr*.fna.gz > "${COMBINED}"
-  gunzip -c "${OUTDIR}/phix.fna.gz" >> "${COMBINED}"
-  echo "Combined reference created: ${COMBINED}"
+  gunzip -c "${GRCh38_GZ}" > "${COMBINED}"
+  gunzip -c "${PHIX_GZ}" >> "${COMBINED}"
+  echo "Combined reference created: ${COMBINED} ($(du -sh "${COMBINED}" | cut -f1))"
 else
-  echo "Combined reference already exists."
+  echo "Combined reference already exists: ${COMBINED}"
 fi
 
 echo "=== Step 4: Build BWA-MEM2 index (requires ~64 GB RAM, ~60 min) ==="
 
-if [ ! -f "${COMBINED}.bwt.2bit.64" ]; then
-  bwa-mem2 index -p "${COMBINED}" "${COMBINED}"
-  echo "BWA-MEM2 index built."
+BWA_IDX="${COMBINED}.bwt.2bit.64"
+if [ ! -f "${BWA_IDX}" ]; then
+  AVAIL_GB=$(awk '/MemAvailable/ {printf "%.0f", $2/1024/1024}' /proc/meminfo)
+  echo "Available RAM: ~${AVAIL_GB} GB"
+  if [ "${AVAIL_GB}" -ge 60 ]; then
+    bwa-mem2 index "${COMBINED}"
+    echo "BWA-MEM2 index built."
+  else
+    echo "WARNING: Only ${AVAIL_GB} GB RAM available — skipping BWA-MEM2 index."
+    echo "         Pipeline will fall back to minimap2 for short-read host removal."
+  fi
 else
   echo "BWA-MEM2 index already exists."
 fi
 
-echo "=== Step 5: Build minimap2 index for Nanopore (optional, ~5 min) ==="
+echo "=== Step 5: Build minimap2 index (~5 min, works for both SR and LR) ==="
 
-MMAP_IDX="${OUTDIR}/GRCh38_decoy.mmi"
+MMAP_IDX="${OUTDIR}/GRCh38_decoy.sr.mmi"
 if [ ! -f "${MMAP_IDX}" ]; then
-  minimap2 -x map-ont -d "${MMAP_IDX}" "${COMBINED}"
-  echo "minimap2 index built: ${MMAP_IDX}"
+  minimap2 -x sr -t "${THREADS}" -d "${MMAP_IDX}" "${COMBINED}"
+  echo "minimap2 SR index built: ${MMAP_IDX}"
 else
-  echo "minimap2 index already exists."
+  echo "minimap2 SR index already exists."
+fi
+
+MMAP_LR_IDX="${OUTDIR}/GRCh38_decoy.ont.mmi"
+if [ ! -f "${MMAP_LR_IDX}" ]; then
+  minimap2 -x map-ont -t "${THREADS}" -d "${MMAP_LR_IDX}" "${COMBINED}"
+  echo "minimap2 ONT index built: ${MMAP_LR_IDX}"
+else
+  echo "minimap2 ONT index already exists."
 fi
 
 echo ""
 echo "=== Done ==="
-echo "Human reference: ${COMBINED}"
+echo "Human reference : ${COMBINED}"
+echo "BWA-MEM2 index  : ${BWA_IDX}"
+echo "minimap2 SR idx : ${MMAP_IDX}"
+echo "minimap2 ONT idx: ${MMAP_LR_IDX}"
 echo ""
 echo "Set environment variable:"
 echo "  export HUMAN_REF=$(pwd)/${COMBINED}"

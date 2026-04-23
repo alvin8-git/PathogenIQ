@@ -1,5 +1,3 @@
-from pathlib import Path
-import pytest
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 
 

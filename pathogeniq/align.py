@@ -39,7 +39,7 @@ def run_targeted_alignment(
             str(nonhuman_fastq),
             "-o", str(paf_file),
         ]
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, check=True)
         read_set = _parse_paf(paf_file)
         org_reads[org_idx] = read_set
         for r in read_set:

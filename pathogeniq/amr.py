@@ -86,7 +86,8 @@ def run_amr_screen(
             str(fasta_path),
         ],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         return []

@@ -1,10 +1,7 @@
-import numpy as np
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-import pytest
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 from pathogeniq.sketch import SketchHit
-from pathogeniq.align import run_targeted_alignment, AlignmentResult
+from pathogeniq.align import run_targeted_alignment
 
 
 def _cfg(tmp_path):

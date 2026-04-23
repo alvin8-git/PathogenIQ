@@ -1,8 +1,6 @@
-from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
-import pytest
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
-from pathogeniq.sketch import run_sketch_screen, SketchHit
+from pathogeniq.sketch import run_sketch_screen
 
 
 def _cfg(tmp_path):

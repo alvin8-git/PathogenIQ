@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from pathogeniq.em import em_abundance, bootstrap_ci, EMResult
+from pathogeniq.em import em_abundance, bootstrap_ci
 
 
 def test_em_all_reads_one_organism():

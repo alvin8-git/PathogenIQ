@@ -54,5 +54,21 @@ def run_host_removal(cfg: PipelineConfig, filtered_fastq: Path) -> tuple[Path, H
     ]
     subprocess.run(extract_cmd, capture_output=True, text=True, check=True)
 
-    metrics = HostRemovalMetrics(total_reads=0, human_reads=0, nonhuman_reads=0)
+    flagstat = subprocess.run(
+        ["samtools", "flagstat", str(sam_file)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    total_reads = 0
+    mapped_reads = 0
+    for line in flagstat.splitlines():
+        if "in total" in line:
+            total_reads = int(line.split()[0])
+        elif "mapped" in line and "primary mapped" not in line and "%" in line:
+            mapped_reads = int(line.split()[0])
+    nonhuman_reads = total_reads - mapped_reads
+    metrics = HostRemovalMetrics(
+        total_reads=total_reads,
+        human_reads=mapped_reads,
+        nonhuman_reads=nonhuman_reads,
+    )
     return nonhuman_fastq, metrics

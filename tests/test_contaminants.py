@@ -1,4 +1,3 @@
-import pytest
 from pathogeniq.contaminants import flag_contaminants, CONTAMINANT_PRIORS
 from pathogeniq.config import SpecimenType
 from pathogeniq.report import ReportEntry, EvidenceGrade

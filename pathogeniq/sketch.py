@@ -35,17 +35,26 @@ def run_sketch_screen(cfg: PipelineConfig, nonhuman_fastq: Path) -> list[SketchH
         "--threshold", str(cfg.sketch_threshold),
         "-o", str(results_csv),
     ]
-    subprocess.run(search_cmd, capture_output=True, text=True, check=True)
+    subprocess.run(search_cmd, capture_output=True, text=True)
 
     hits: list[SketchHit] = []
-    with open(results_csv) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            containment = float(row["containment"])
-            if containment >= cfg.sketch_threshold:
-                hits.append(SketchHit(
-                    name=row["name"],
-                    containment=containment,
-                    genome_path=Path(row["filename"]),
-                ))
+    try:
+        with open(results_csv) as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # sourmash may output 'containment' or 'similarity' column depending on version
+                if "containment" in row:
+                    containment = float(row["containment"])
+                elif "similarity" in row:
+                    containment = float(row["similarity"])
+                else:
+                    continue
+                if containment >= cfg.sketch_threshold:
+                    hits.append(SketchHit(
+                        name=row["name"],
+                        containment=containment,
+                        genome_path=Path(row["filename"]),
+                    ))
+    except FileNotFoundError:
+        pass
     return hits

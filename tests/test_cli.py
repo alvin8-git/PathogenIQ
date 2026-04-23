@@ -1,6 +1,6 @@
 import numpy as np
 from click.testing import CliRunner
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathogeniq.cli import cli
 from pathogeniq.em import EMResult
 from pathogeniq.qc import QCMetrics

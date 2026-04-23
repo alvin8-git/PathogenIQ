@@ -1,9 +1,7 @@
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
-import pytest
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
-from pathogeniq.qc import run_qc, QCMetrics
+from pathogeniq.qc import run_qc
 
 
 def _cfg(tmp_path, read_type=ReadType.SHORT):
