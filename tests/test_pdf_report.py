@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 
 from pathogeniq.amr import AMRHit
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType

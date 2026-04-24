@@ -8,6 +8,7 @@ from .sketch import run_sketch_screen
 from .align import run_targeted_alignment
 from .em import em_abundance, bootstrap_ci
 from .report import write_report
+from .html_report import write_html_report
 
 
 @click.group()
@@ -64,4 +65,9 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type, 
 
     click.echo("[5/5] Generating report...")
     report_dir = write_report(cfg, align_result.organism_names, em_result, ci_lower, ci_upper)
+    html_path = write_html_report(
+        cfg, qc_metrics, hr_metrics, hits,
+        align_result.organism_names, em_result, ci_lower, ci_upper,
+    )
     click.echo(f"Report written to: {report_dir}")
+    click.echo(f"HTML report:       {html_path}")

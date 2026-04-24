@@ -79,6 +79,26 @@ echo "=== Step 4: Build sourmash SBT index ==="
   "${SIG_DIR}"/*.sig
 
 echo ""
+echo "=== Step 5: Write name_map.json ==="
+python3 - <<'PY'
+import json, pathlib
+name_map = {
+    "GCF_000006765.1": "Pseudomonas aeruginosa",
+    "GCF_000005845.2": "Escherichia coli",
+    "GCF_000006945.2": "Salmonella enterica",
+    "GCF_000759415.1": "Lactobacillus fermentum",
+    "GCF_000007785.1": "Enterococcus faecalis",
+    "GCF_000013425.1": "Staphylococcus aureus",
+    "GCF_000196035.1": "Listeria monocytogenes",
+    "GCF_000009045.1": "Bacillus subtilis",
+    "GCF_000146045.2": "Saccharomyces cerevisiae",
+    "GCF_000149245.2": "Cryptococcus neoformans",
+}
+pathlib.Path("databases/zymo_tier1/name_map.json").write_text(json.dumps(name_map, indent=2))
+print("Written: databases/zymo_tier1/name_map.json")
+PY
+
+echo ""
 echo "=== Done ==="
 echo "ZymoBIOMICS validation DB: ${DB_OUT}"
 echo ""

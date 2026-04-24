@@ -17,6 +17,7 @@ Usage:
 """
 
 import argparse
+import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -247,6 +248,12 @@ def main():
         ["sourmash", "index", "--ksize", "31", str(db_out)] + [str(s) for s in sig_files],
         check=True,
     )
+
+    # ── Step 5: Write name_map.json (accession → species name) ───────────────
+    name_map = {acc: name for name, acc in targets.items()}
+    name_map_path = outdir / "name_map.json"
+    name_map_path.write_text(json.dumps(name_map, indent=2))
+    print(f"\nName map written: {name_map_path} ({len(name_map)} entries)")
 
     print(f"\n{'='*60}")
     print(f"Tier-1 DB ready: {db_out}")

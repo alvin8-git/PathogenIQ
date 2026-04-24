@@ -23,7 +23,7 @@ def run_targeted_alignment(
     out = cfg.output_dir / "align"
     out.mkdir(parents=True, exist_ok=True)
 
-    all_read_ids: list[str] = []
+    _seen_ids: dict[str, int] = {}   # read_id → index, O(1) lookup
     org_reads: dict[int, set[str]] = {i: set() for i in range(len(hits))}
 
     preset = "sr" if cfg.read_type == ReadType.SHORT else "map-ont"
@@ -43,13 +43,15 @@ def run_targeted_alignment(
         read_set = _parse_paf(paf_file)
         org_reads[org_idx] = read_set
         for r in read_set:
-            if r not in all_read_ids:
-                all_read_ids.append(r)
+            if r not in _seen_ids:
+                _seen_ids[r] = len(_seen_ids)
+
+    all_read_ids: list[str] = list(_seen_ids.keys())
 
     n_reads = len(all_read_ids)
     n_orgs = len(hits)
     matrix = np.zeros((n_reads, n_orgs), dtype=float)
-    read_idx = {rid: i for i, rid in enumerate(all_read_ids)}
+    read_idx = _seen_ids  # already maps read_id → index
 
     for org_idx, read_set in org_reads.items():
         for rid in read_set:

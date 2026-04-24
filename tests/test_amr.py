@@ -1,10 +1,8 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from pathogeniq.amr import (
-    AMRHit,
     _fastq_to_fasta,
     _parse_abricate_tsv,
     run_amr_screen,
