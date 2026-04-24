@@ -24,5 +24,5 @@ class PipelineConfig:
     db_tier1: Path
     host_reference: Path
     threads: int = 8
-    sketch_threshold: float = 0.005
+    sketch_threshold: float = 0.003
     n_bootstrap: int = 100
