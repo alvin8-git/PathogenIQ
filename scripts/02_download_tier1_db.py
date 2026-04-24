@@ -53,6 +53,7 @@ TIER1_PATHOGENS = {
     "Enterococcus faecium":             "GCF_000174395.2",
     "Streptococcus pneumoniae":         "GCF_000007045.1",
     "Streptococcus pyogenes":           "GCF_000006785.2",
+    "Lactobacillus fermentum":           "GCF_000159215.1",  # ATCC 14931; reclassified as Limosilactobacillus
     "Listeria monocytogenes":           "GCF_000196035.1",
     "Bacillus anthracis":               "GCF_000008445.1",  # CDC Select Agent
     "Clostridioides difficile":         "GCF_000009205.2",
@@ -103,7 +104,7 @@ TIER1_PATHOGENS = {
     "Candida albicans":                 "GCF_000182965.3",
     "Candida auris":                    "GCF_002775015.1",
     "Aspergillus fumigatus":            "GCF_000002655.1",
-    "Cryptococcus neoformans":          "GCF_000149245.2",
+    "Cryptococcus neoformans":          "GCF_000149245.1",  # .2 retired; .1 (JEC21) available
     "Pneumocystis jirovecii":           "GCF_001477535.1",
     "Histoplasma capsulatum":           "GCF_000006445.1",
     "Coccidioides immitis":             "GCF_000149335.2",
@@ -126,7 +127,7 @@ _SKIP = {
     # Replace with updated accessions when found:
     "GCF_000001469.1",    # H. influenzae Rd KW20 — try GCF_000001469.2
     "GCF_000863945.1",    # HHV-8/KSHV
-    "GCF_000149245.2",    # Cryptococcus neoformans JEC21
+    # GCF_000149245.2 retired → replaced by GCF_000149245.1 above
     "GCF_000006445.1",    # Histoplasma capsulatum
     "GCF_000002725.1",    # Leishmania major Friedlin
     "GCF_000401635.1",    # Mucor circinelloides CBS277.49

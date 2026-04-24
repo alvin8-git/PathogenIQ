@@ -23,19 +23,19 @@ echo "=== Step 1: Download ZymoBIOMICS reference genomes in parallel ==="
 
 # NCBI RefSeq accessions for ZymoBIOMICS D6300 community members
 # These are the representative/reference strains closest to the ZymoBIOMICS material
-ACCESSION_LIST="GCF_000006765.1,GCF_000005845.2,GCF_000006945.2,GCF_000759415.1,GCF_000007785.1,GCF_000013425.1,GCF_000196035.1,GCF_000009045.1,GCF_000146045.2,GCF_000149245.2"
+ACCESSION_LIST="GCF_000006765.1,GCF_000005845.2,GCF_000006945.2,GCF_000159215.1,GCF_000007785.1,GCF_000013425.1,GCF_000196035.1,GCF_000009045.1,GCF_000146045.2,GCF_000149245.1"
 
 # Organism legend:
 #   GCF_000006765.1  Pseudomonas aeruginosa PAO1
 #   GCF_000005845.2  Escherichia coli K-12 MG1655
 #   GCF_000006945.2  Salmonella enterica LT2
-#   GCF_000759415.1  Lactobacillus fermentum ATCC14931
+#   GCF_000159215.1  Lactobacillus fermentum ATCC14931 (reclassified as Limosilactobacillus)
 #   GCF_000007785.1  Enterococcus faecalis V583
 #   GCF_000013425.1  Staphylococcus aureus NCTC8325
 #   GCF_000196035.1  Listeria monocytogenes EGD-e
 #   GCF_000009045.1  Bacillus subtilis 168
 #   GCF_000146045.2  Saccharomyces cerevisiae S288C
-#   GCF_000149245.2  Cryptococcus neoformans H99
+#   GCF_000149245.1  Cryptococcus neoformans JEC21
 
 # Download all 10 genomes in parallel (ncbi-genome-download handles concurrency)
 # Correct short flags: -A accessions, -F formats, -o output, -p parallel, -r retries
@@ -86,13 +86,13 @@ name_map = {
     "GCF_000006765.1": "Pseudomonas aeruginosa",
     "GCF_000005845.2": "Escherichia coli",
     "GCF_000006945.2": "Salmonella enterica",
-    "GCF_000759415.1": "Lactobacillus fermentum",
+    "GCF_000159215.1": "Lactobacillus fermentum",   # reclassified; old GCF_000759415.1 retired
     "GCF_000007785.1": "Enterococcus faecalis",
     "GCF_000013425.1": "Staphylococcus aureus",
     "GCF_000196035.1": "Listeria monocytogenes",
     "GCF_000009045.1": "Bacillus subtilis",
     "GCF_000146045.2": "Saccharomyces cerevisiae",
-    "GCF_000149245.2": "Cryptococcus neoformans",
+    "GCF_000149245.1": "Cryptococcus neoformans",   # .2 retired; use .1
 }
 pathlib.Path("databases/zymo_tier1/name_map.json").write_text(json.dumps(name_map, indent=2))
 print("Written: databases/zymo_tier1/name_map.json")

@@ -11,7 +11,7 @@ def test_pipeline_config_defaults(tmp_path):
         host_reference=tmp_path / "human.fa",
     )
     assert cfg.threads == 8
-    assert cfg.sketch_threshold == 0.01
+    assert cfg.sketch_threshold == 0.005
 
 
 def test_read_type_enum_values():

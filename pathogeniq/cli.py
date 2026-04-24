@@ -24,7 +24,7 @@ def cli():
 @click.option("--specimen", type=click.Choice([s.value for s in SpecimenType]), required=True)
 @click.option("--read-type", type=click.Choice([r.value for r in ReadType]), default="short", show_default=True)
 @click.option("--threads", default=8, show_default=True)
-@click.option("--sketch-threshold", default=0.01, show_default=True)
+@click.option("--sketch-threshold", default=0.005, show_default=True)
 @click.option("--n-bootstrap", default=100, show_default=True)
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type, threads, sketch_threshold, n_bootstrap):
     """Run the full PathogenIQ pipeline."""
