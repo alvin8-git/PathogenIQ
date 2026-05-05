@@ -43,6 +43,15 @@ def _build_md5_map(db_path: Path) -> dict[str, tuple[str, Path]]:
                     genome: Path = genome_dir / f"{stem}.fna"
                     if not genome.exists():
                         genome = genome_dir / f"{stem}.fna.gz"
+                    if not genome.exists():
+                        m_acc = _ACCESSION_RE.search(stem)
+                        if m_acc:
+                            acc = m_acc.group(1)
+                            for pat in (f"{acc}*.fna", f"{acc}*.fna.gz"):
+                                found = sorted(genome_dir.glob(pat))
+                                if found:
+                                    genome = found[0]
+                                    break
                     m = _ACCESSION_RE.search(stem)
                     name = name_map.get(m.group(1), stem) if m else stem
                     md5_map[md5] = (name, genome)

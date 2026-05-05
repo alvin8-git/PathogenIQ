@@ -34,3 +34,14 @@ work/
 tmp/
 scratch/
 *.tmp
+
+# Pipeline outputs and large data directories
+databases/
+results/
+fastp.html
+
+# Python build artifacts
+pathogeniq.egg-info/
+*.egg-info/
+dist/
+build/
