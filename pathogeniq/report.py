@@ -57,31 +57,45 @@ def write_report(
     em_result: EMResult,
     ci_lower: np.ndarray,
     ci_upper: np.ndarray,
+    amr_hits: list | None = None,
+    entries_override: list[ReportEntry] | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
 
-    read_counts = (em_result.abundances * em_result.n_reads).astype(int)
-
-    entries = [
-        ReportEntry(
-            organism=name,
-            abundance=float(em_result.abundances[i]),
-            ci_lower=float(ci_lower[i]),
-            ci_upper=float(ci_upper[i]),
-            read_count=int(read_counts[i]),
-            specimen_type=cfg.specimen_type,
-        )
-        for i, name in enumerate(organism_names)
-    ]
-    entries = flag_contaminants(entries)
+    if entries_override is not None:
+        entries = entries_override
+    else:
+        read_counts = (em_result.abundances * em_result.n_reads).astype(int)
+        entries = [
+            ReportEntry(
+                organism=name,
+                abundance=float(em_result.abundances[i]),
+                ci_lower=float(ci_lower[i]),
+                ci_upper=float(ci_upper[i]),
+                read_count=int(read_counts[i]),
+                specimen_type=cfg.specimen_type,
+            )
+            for i, name in enumerate(organism_names)
+        ]
+        entries = flag_contaminants(entries)
     entries.sort(key=lambda e: e.abundance, reverse=True)
+
+    amr_by_org: dict[str, list[dict]] = {}
+    for hit in (amr_hits or []):
+        amr_by_org.setdefault(hit.organism_match, []).append({
+            "gene": hit.gene,
+            "drug_class": hit.drug_class,
+            "identity_pct": hit.identity_pct,
+            "coverage_pct": hit.coverage_pct,
+        })
 
     tsv_path = out / "pathogeniq_report.tsv"
     with open(tsv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["organism", "abundance_pct", "ci_lower_pct", "ci_upper_pct", "read_count", "grade", "contaminant_risk"],
+            fieldnames=["organism", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
+                        "read_count", "grade", "contaminant_risk"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -111,6 +125,7 @@ def write_report(
                 "read_count": e.read_count,
                 "grade": e.grade.value,
                 "contaminant_risk": e.contaminant_risk,
+                "amr_genes": amr_by_org.get(e.organism, []),
             }
             for e in entries
         ],

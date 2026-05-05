@@ -26,3 +26,4 @@ class PipelineConfig:
     threads: int = 8
     sketch_threshold: float = 0.003
     n_bootstrap: int = 100
+    amr_db: str = "card"

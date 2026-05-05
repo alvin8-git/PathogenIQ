@@ -74,6 +74,91 @@ def test_cli_run_invokes_pipeline(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_cli_run_produces_pdf(tmp_path):
+    """End-to-end CLI smoke test: PDF is produced when pipeline succeeds."""
+    from unittest.mock import patch, MagicMock
+
+    fq = tmp_path / "s.fq.gz"
+    fq.touch()
+    db = tmp_path / "db.sbt.zip"
+    db.touch()
+    ref = tmp_path / "ref.fa"
+    ref.touch()
+
+    fake_em = EMResult(abundances=np.array([1.0]), n_reads=10, n_organisms=1, iterations=3)
+    fake_align = AlignmentResult(
+        alignment_matrix=np.ones((10, 1)),
+        organism_names=["Staphylococcus aureus"],
+        read_ids=["r1"],
+    )
+
+    runner = CliRunner()
+    with patch("pathogeniq.cli.run_qc", return_value=(tmp_path / "filt.fq.gz", QCMetrics(100, 90))), \
+         patch("pathogeniq.cli.run_host_removal", return_value=(tmp_path / "nonhuman.fq.gz", HostRemovalMetrics(90, 80, 10))), \
+         patch("pathogeniq.cli.run_sketch_screen", return_value=[SketchHit("Staphylococcus aureus", 0.05, tmp_path / "genome.fa")]), \
+         patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
+         patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
+         patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
+         patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
+         patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
+         patch("pathogeniq.cli.write_pdf_report") as mock_pdf:
+        mock_pdf.return_value = tmp_path / "report" / "pathogeniq_report.pdf"
+        result = runner.invoke(cli, [
+            "run",
+            "--input", str(fq),
+            "--output", str(tmp_path / "out"),
+            "--db", str(db),
+            "--host-ref", str(ref),
+            "--specimen", "blood",
+            "--read-type", "short",
+        ])
+
+    assert result.exit_code == 0, result.output
+    mock_pdf.assert_called_once()
+
+
+def test_cli_run_no_pdf_flag(tmp_path):
+    """--no-pdf suppresses PDF generation."""
+    from unittest.mock import patch
+
+    fq = tmp_path / "s.fq.gz"
+    fq.touch()
+    db = tmp_path / "db.sbt.zip"
+    db.touch()
+    ref = tmp_path / "ref.fa"
+    ref.touch()
+
+    fake_em = EMResult(abundances=np.array([1.0]), n_reads=10, n_organisms=1, iterations=3)
+    fake_align = AlignmentResult(
+        alignment_matrix=np.ones((10, 1)),
+        organism_names=["Staphylococcus aureus"],
+        read_ids=["r1"],
+    )
+
+    runner = CliRunner()
+    with patch("pathogeniq.cli.run_qc", return_value=(tmp_path / "filt.fq.gz", QCMetrics(100, 90))), \
+         patch("pathogeniq.cli.run_host_removal", return_value=(tmp_path / "nonhuman.fq.gz", HostRemovalMetrics(90, 80, 10))), \
+         patch("pathogeniq.cli.run_sketch_screen", return_value=[SketchHit("Staphylococcus aureus", 0.05, tmp_path / "genome.fa")]), \
+         patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
+         patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
+         patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
+         patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
+         patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
+         patch("pathogeniq.cli.write_pdf_report") as mock_pdf:
+        result = runner.invoke(cli, [
+            "run",
+            "--input", str(fq),
+            "--output", str(tmp_path / "out"),
+            "--db", str(db),
+            "--host-ref", str(ref),
+            "--specimen", "blood",
+            "--no-pdf",
+        ])
+
+    assert result.exit_code == 0, result.output
+    mock_pdf.assert_not_called()
+
+
 def test_cli_run_no_candidates_exits_cleanly(tmp_path):
     runner = CliRunner()
     fake_fastq = tmp_path / "sample.fastq.gz"
