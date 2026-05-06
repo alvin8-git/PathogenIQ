@@ -68,6 +68,12 @@ FASTQ (Illumina SR / Nanopore LR)
     └────┬────┘
          │
     ┌────▼────┐
+    │ Stage 3.5│  Targeted Read Extraction  ← NEW
+    │          │  seqtk subseq against shortlist k-mers
+    │          │  → reduces alignment input; lowers off-target alignments
+    └────┬────┘
+         │
+    ┌────▼────┐
     │  Stage 4 │  Targeted Alignment + EM Abundance
     │          │  minimap2 (LR) | BWA-MEM2 (SR) → candidate genomes only
     │          │  EM algorithm resolves multi-mappers
@@ -77,7 +83,9 @@ FASTQ (Illumina SR / Nanopore LR)
          │
     ┌────▼────┐
     │  Stage 5 │  Clinical Interpretation Engine
-    │          │  Specimen-aware thresholds, AMR overlay (CARD + ResFinder)
+    │          │  Specimen-aware thresholds, AMR overlay (AMRFinderPlus)
+    │          │  MLST strain typing for key clinical pathogens  ← NEW
+    │          │  Cross-mapper deduplication (Shigella/E.coli etc.) ← NEW
     │          │  Evidence grading, structured PDF + JSON report
     └──────────┘
 ```
@@ -160,9 +168,20 @@ Stages 1–2 run identically for SR and LR. Stage 3 sketching is read-type agnos
 - **Grade X — Unclassified:** Novel/divergent sequence, <90% identity to known sequence; manual review required
 
 **AMR Overlay:**
-- All non-human reads aligned against CARD + ResFinder via ABRicate (parallel to taxonomic pipeline)
+- Primary tool: NCBI AMRFinderPlus (CARD + ResFinder + stress/virulence genes; organism-aware mode reduces false positives)
+- Fallback: ABRicate if AMRFinderPlus not installed
 - AMR genes linked to source organism via contig-of-origin when possible
 - Output: per-organism resistance profile with gene name, mechanism, and drug class
+
+**MLST / Strain Typing (new):**
+- Tool: `mlst` (PubMLST schemes, 100+ species)
+- Runs on candidate-genome-aligned reads for organisms with a registered PubMLST scheme
+- Priority organisms: *E. coli*, *S. aureus*, *K. pneumoniae*, *P. aeruginosa*, *S. pneumoniae*, *N. meningitidis*, *L. monocytogenes*, *E. faecalis/faecium*
+- Output: sequence type (e.g. ST131) + allele profile in TSV and PDF report
+
+**Cross-Mapper Deduplication (new):**
+- Post-EM step: when two organisms exceed 97% ANI and one has >10× read count of the other, the minor organism is flagged `contaminant_risk=True` with note "Likely cross-mapping from {major_organism}"
+- Handled via `KNOWN_CROSSMAPPERS` dict in `report.py` (e.g. Shigella/E.coli)
 
 ---
 
@@ -393,10 +412,12 @@ Targets:
 | QC | fastp | Chopper + Porechop + NanoStat | |
 | Host removal | BWA-MEM2 | minimap2 -x map-ont | GRCh38 + decoys |
 | Sketch screening | sourmash | sourmash | k=31, scaled=1000 |
+| Read extraction | seqtk subseq | seqtk subseq | Stage 3.5 — new |
 | Alignment | BWA-MEM2 | minimap2 | Candidate genomes only |
 | Abundance EM | Custom Python/Rust | Same | EM algorithm |
 | De novo assembly | metaSPAdes | Flye | Cloud burst |
-| AMR detection | ABRicate (CARD + ResFinder) | Same | Parallel to taxonomy |
+| AMR detection | AMRFinderPlus (abricate fallback) | Same | Organism-aware mode |
+| MLST typing | mlst (PubMLST) | Same | Key clinical pathogens only |
 | Orchestration | Nextflow | Same | SLURM + AWS Batch |
 | Containerization | Docker / Singularity | Same | |
 
