@@ -47,7 +47,8 @@ def test_cli_run_invokes_pipeline(tmp_path):
          patch("pathogeniq.cli.run_targeted_alignment") as mock_align, \
          patch("pathogeniq.cli.em_abundance") as mock_em, \
          patch("pathogeniq.cli.bootstrap_ci") as mock_ci, \
-         patch("pathogeniq.cli.write_report") as mock_report:
+         patch("pathogeniq.cli.write_report") as mock_report, \
+         patch("pathogeniq.cli.write_html_report") as mock_html:
 
         mock_qc.return_value = (tmp_path / "filtered.fastq.gz", QCMetrics(100, 95))
         mock_hr.return_value = (tmp_path / "nonhuman.fastq.gz", HostRemovalMetrics(95, 80, 15))
@@ -60,6 +61,7 @@ def test_cli_run_invokes_pipeline(tmp_path):
         mock_em.return_value = em_result
         mock_ci.return_value = (np.array([0.9]), np.array([1.0]))
         mock_report.return_value = tmp_path / "report"
+        mock_html.return_value = tmp_path / "report" / "pathogeniq_report.html"
 
         result = runner.invoke(cli, [
             "run",
@@ -101,8 +103,10 @@ def test_cli_run_produces_pdf(tmp_path):
          patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
          patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
          patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
-         patch("pathogeniq.cli.write_pdf_report") as mock_pdf:
+         patch("pathogeniq.cli.write_pdf_report") as mock_pdf, \
+         patch("pathogeniq.cli.write_html_report") as mock_html:
         mock_pdf.return_value = tmp_path / "report" / "pathogeniq_report.pdf"
+        mock_html.return_value = tmp_path / "report" / "pathogeniq_report.html"
         result = runner.invoke(cli, [
             "run",
             "--input", str(fq),
@@ -115,6 +119,7 @@ def test_cli_run_produces_pdf(tmp_path):
 
     assert result.exit_code == 0, result.output
     mock_pdf.assert_called_once()
+    mock_html.assert_called_once()
 
 
 def test_cli_run_no_pdf_flag(tmp_path):
@@ -144,7 +149,9 @@ def test_cli_run_no_pdf_flag(tmp_path):
          patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
          patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
          patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
-         patch("pathogeniq.cli.write_pdf_report") as mock_pdf:
+         patch("pathogeniq.cli.write_pdf_report") as mock_pdf, \
+         patch("pathogeniq.cli.write_html_report") as mock_html:
+        mock_html.return_value = tmp_path / "report" / "pathogeniq_report.html"
         result = runner.invoke(cli, [
             "run",
             "--input", str(fq),
@@ -157,6 +164,7 @@ def test_cli_run_no_pdf_flag(tmp_path):
 
     assert result.exit_code == 0, result.output
     mock_pdf.assert_not_called()
+    mock_html.assert_called_once()
 
 
 def test_cli_run_no_candidates_exits_cleanly(tmp_path):

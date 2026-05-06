@@ -6,6 +6,7 @@ from .config import PipelineConfig, ReadType, SpecimenType
 from .contaminants import flag_contaminants
 from .em import bootstrap_ci, em_abundance
 from .host_remove import run_host_removal
+from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
 from .report import ReportEntry, write_report
@@ -99,5 +100,12 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits)
         click.echo(f"PDF report:        {pdf_path}")
+
+    html_path = write_html_report(
+        cfg, qc_metrics, hr_metrics, hits,
+        align_result.organism_names, em_result, ci_lower, ci_upper,
+        amr_hits=amr_hits,
+    )
+    click.echo(f"HTML report:       {html_path}")
 
     click.echo(f"Report written to: {report_dir}")
