@@ -30,6 +30,7 @@ NOT YET WIRED (documented blockers):
 import argparse
 from pathlib import Path
 
+from pathogeniq.background import is_background, load_background_table
 from pathogeniq.benchmark import (
     average_precision,
     kraken_to_grading_inputs,
@@ -57,6 +58,8 @@ def main() -> None:
     ap.add_argument("--truth", required=True, type=Path, help="one NCBI taxid per line")
     ap.add_argument("--specimen", required=True, choices=[s.value for s in SpecimenType])
     ap.add_argument("--tier", type=int, default=3, help="NTC tier for the graded config (1/2/3)")
+    ap.add_argument("--background", type=Path, default=None,
+                    help="taxid-keyed background table; applies the NB filter to the graded config")
     ap.add_argument("--recall", type=float, default=0.95, help="fixed sensitivity for precision@recall")
     args = ap.parse_args()
 
@@ -72,11 +75,21 @@ def main() -> None:
     raw_pred = {t.taxid for t in taxa}
     raw_ap, raw_p = _score("kraken-raw", raw_scored, raw_pred, truth, args.recall)
 
-    # config 2: Kraken2 + grading — drop Grade-X taxa, tier cap applied
-    gi = kraken_to_grading_inputs(taxa, specimen=specimen, tier=args.tier)
-    kept = {tid for tid, g in gi.items() if grade(g) != EvidenceGrade.X}
+    # config 2: Kraken2 + grading — NB background filter (if given) + drop Grade-X,
+    # tier cap applied
+    bg = load_background_table(args.background) if args.background else None
+    tier = bg.tier if bg is not None else args.tier
+    total = sum(t.reads for t in taxa)
+    gi = kraken_to_grading_inputs(taxa, specimen=specimen, tier=tier)
+    kept = set()
+    for t in taxa:
+        if bg is not None and is_background(t.taxid, t.reads, total, bg):
+            continue   # indistinguishable from NTC background -> drop
+        if grade(gi[t.taxid]) != EvidenceGrade.X:
+            kept.add(t.taxid)
+    label = "kraken+grading+bg" if bg is not None else "kraken+grading"
     graded_scored = [(t.taxid, float(t.reads)) for t in taxa if t.taxid in kept]
-    graded_ap, graded_p = _score("kraken+grading", graded_scored, kept, truth, args.recall)
+    graded_ap, graded_p = _score(label, graded_scored, kept, truth, args.recall)
 
     # Grading's value is removing low-support false positives, which moves
     # operating-point precision; PR-AUC can be flat when those FPs are already
