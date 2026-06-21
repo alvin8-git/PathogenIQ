@@ -29,15 +29,19 @@ def load_nodes(path: Path) -> dict[str, tuple[str, str]]:
     return nodes
 
 
-def to_species(taxid: str, nodes: dict[str, tuple[str, str]]) -> str | None:
-    """Walk parent links to the species-rank ancestor; None if none/unknown.
-    Stops at the root (parent == self) to avoid an infinite loop on a bad dump."""
+def to_rank(taxid: str, nodes: dict[str, tuple[str, str]], rank: str = "species") -> str | None:
+    """Walk parent links to the ancestor at ``rank``; None if none/unknown.
+    Stops at the root (parent == self) to avoid an infinite loop on a bad dump.
+
+    Note: this only walks UP, so a taxid already coarser than ``rank`` (e.g. a
+    genus taxid with rank='species') yields None — by design. CAMI 97%-OTU truth
+    is often genus-resolved, so HMP body sites are scored with rank='genus'."""
     seen = set()
     cur = taxid
     while cur in nodes and cur not in seen:
         seen.add(cur)
-        parent, rank = nodes[cur]
-        if rank == "species":
+        parent, cur_rank = nodes[cur]
+        if cur_rank == rank:
             return cur
         if parent == cur:
             break
@@ -49,7 +53,7 @@ def _open(path: Path):
     return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
 
 
-def reads_mapping_species(mapping: Path, nodes: dict[str, tuple[str, str]]) -> set[str]:
+def reads_mapping_truth(mapping: Path, nodes: dict[str, tuple[str, str]], rank: str = "species") -> set[str]:
     raw: set[str] = set()
     with _open(mapping) as fh:
         for line in fh:
@@ -58,31 +62,33 @@ def reads_mapping_species(mapping: Path, nodes: dict[str, tuple[str, str]]) -> s
             cols = line.split("\t")
             if len(cols) >= 3:
                 raw.add(cols[2].strip())
-    species = {s for t in raw if (s := to_species(t, nodes))}
-    return species
+    return {r for t in raw if (r := to_rank(t, nodes, rank))}
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="CAMI reads_mapping.tsv -> species truth set.")
+    ap = argparse.ArgumentParser(description="CAMI reads_mapping.tsv -> truth set at a rank.")
     ap.add_argument("--mapping", required=True, type=Path)
     ap.add_argument("--nodes", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--rank", default="species", help="taxonomic rank for the truth set (species/genus/...)")
     args = ap.parse_args()
     nodes = load_nodes(args.nodes)
-    species = reads_mapping_species(args.mapping, nodes)
-    args.out.write_text("\n".join(sorted(species, key=int)) + "\n")
-    print(f"{len(species)} species taxa -> {args.out}")
+    truth = reads_mapping_truth(args.mapping, nodes, args.rank)
+    args.out.write_text("\n".join(sorted(truth, key=int)) + "\n")
+    print(f"{len(truth)} {args.rank} taxa -> {args.out}")
 
 
 def _selfcheck() -> None:
-    # strain 99 -> species 9 -> genus 1(root); strain 88 -> species 9 too -> dedup
-    nodes = {"1": ("1", "no rank"), "9": ("1", "species"),
-             "99": ("9", "strain"), "88": ("9", "no rank"), "7": ("1", "genus")}
-    assert to_species("99", nodes) == "9"
-    assert to_species("88", nodes) == "9"
-    assert to_species("9", nodes) == "9"
-    assert to_species("7", nodes) is None        # genus has no species ancestor
-    assert to_species("404", nodes) is None       # unknown taxid
+    # tree: root1 > genus7 > species9 > {strain99, no-rank88}
+    nodes = {"1": ("1", "no rank"), "7": ("1", "genus"), "9": ("7", "species"),
+             "99": ("9", "strain"), "88": ("9", "no rank")}
+    assert to_rank("99", nodes) == "9"            # strain -> species
+    assert to_rank("88", nodes) == "9"            # dedups to same species
+    assert to_rank("9", nodes) == "9"
+    assert to_rank("7", nodes) is None            # genus has no species ancestor (walk up only)
+    assert to_rank("404", nodes) is None          # unknown taxid
+    assert to_rank("99", nodes, "genus") == "7"   # strain -> genus
+    assert to_rank("9", nodes, "genus") == "7"    # species -> genus (the HMP case)
     print("selfcheck OK")
 
 

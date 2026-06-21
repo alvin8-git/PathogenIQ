@@ -149,3 +149,39 @@ predicted: many near-identical strains drive cross-mapping FPs that a read floor
 alone can't fully resolve (the case Plan-3D dedup targets). Even so it's a 109x
 lift. Graded PR-AUC tracks raw (the filtering trades ranking-recall for
 operating-point precision, as before); the precision lift is the headline.
+
+## Update — HMP body-site panel (genus rank)
+
+Added 3 CAMI II Human Microbiome Project body sites (freely downloaded from
+frl.publisso.de per_bodysite): skin (`sample_1`), airway (`sample_4`), oral
+(`sample_6`). These ship per-read truth (`reads_mapping.tsv`) rather than a
+.profile; truth is derived with `scripts/09_reads_mapping_truth.py`.
+
+**Why a separate panel:** the HMP truth uses 97%-identity OTU taxids, which in
+NCBI taxonomy resolve only to **genus** (skin: 20 genus + 4 family, 0 species).
+A species-level comparison is impossible, so these are scored at **genus rank**
+(Kraken2 rank G, truth rolled up to genus) and reported separately — averaging a
+genus panel into the species CAMI mean would be apples-to-oranges.
+
+Floor=500 **transferred unchanged** from the species-level Zymo calibration
+(not re-tuned on HMP):
+
+| held-out community | raw P | graded P | graded R | lift |
+|---|---|---|---|---|
+| hmp_skin | 0.009 | 0.455 | 1.000 | 51x |
+| hmp_airway | 0.009 | 0.333 | 0.857 | 37x |
+| hmp_oral | 0.005 | 0.268 | 1.000 | 54x |
+| **MEAN (held-out)** | **0.008** | **0.352** | **0.952** | **44x** |
+
+A read floor learned on a species-level mock standard generalizes to a **coarser
+taxonomic rank and 3 host-associated low-biomass communities**: precision
+0.008 -> 0.352 (44x) at recall 0.952. Recall is high because genus aggregation
+pools reads across constituent species, so true genera clear the floor easily;
+the FP tail (spurious low-read genera) is what grading removes.
+
+**Combined picture:** the floor=500 operating point, calibrated once on 3 Zymo
+runs, now holds across **9 held-out communities** — 3 CAMI species-level
+environments (gut/marine/strain, mean P 0.494) and 3 HMP genus-level body sites
+(skin/airway/oral, mean P 0.352) — none seen during calibration, spanning two
+taxonomic ranks. The grading wedge is community- and rank-agnostic, not
+Zymo-overfit.

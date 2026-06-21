@@ -14,9 +14,16 @@ read-count floor that maximizes mean graded precision, then reports the held-out
 Truth files: one taxid per line, OR a CAMI gold-standard .profile (auto-detected,
 so CAMI communities drop in as soon as their reads are classified to a .kreport).
 
+Manifest columns: name, kreport, truth, specimen, [rank]. The optional 5th
+column is the Kraken2 rank code to score at (default S=species); use G for
+communities whose truth is only genus-resolved (e.g. CAMI 97%-OTU HMP body
+sites). Keep different ranks in separate manifests — the mean averages
+PR/precision and mixing ranks is apples-to-oranges.
+
 Manifest example:
     zymo_r1<TAB>r1.kreport<TAB>zymo_truth.txt<TAB>blood
     cami_mousegut<TAB>mg.kreport<TAB>cami2_mouse_gut_gs.profile<TAB>tissue
+    hmp_skin<TAB>skin.kreport<TAB>skin_truth.txt<TAB>blood<TAB>G
 """
 import argparse
 import statistics
@@ -71,8 +78,10 @@ def main() -> None:
     for ln in args.manifest.read_text().splitlines():
         if not ln.strip() or ln.startswith("#"):
             continue
-        name, kr, tr, sp = ln.split("\t")[:4]
-        taxa = parse_kraken2_report(Path(kr).read_text())
+        cols = ln.split("\t")
+        name, kr, tr, sp = cols[:4]
+        rank = cols[4].strip() if len(cols) > 4 and cols[4].strip() else "S"  # kraken rank code; G for genus-resolved truth (HMP OTUs)
+        taxa = parse_kraken2_report(Path(kr).read_text(), rank=rank)
         comms.append((name, taxa, load_truth(Path(tr)), SpecimenType(sp)))
 
     read_floor = args.read_floor
