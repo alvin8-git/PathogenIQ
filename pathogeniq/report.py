@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .background import BackgroundModel, is_background
 from .config import PipelineConfig, SpecimenType
 from .contaminants import flag_contaminants
 from .em import EMResult
@@ -108,35 +109,63 @@ class ReportEntry:
         return grade(self.as_input())
 
 
-def write_report(
+def build_entries(
     cfg: PipelineConfig,
     organism_names: list[str],
     em_result: EMResult,
     ci_lower: np.ndarray,
     ci_upper: np.ndarray,
+    taxon_ids: list[str],
+    *,
+    background: BackgroundModel | None = None,
+) -> list[ReportEntry]:
+    """Build the report entries once, for every renderer (JSON/TSV/PDF/HTML).
+
+    Applies the NTC tier, the contaminant blocklist, and the background filter,
+    then sorts by abundance:
+
+        construct ──► set tier ──► (tier != 1) static blocklist   [CQ3]
+                  ──► (background) drop taxa where p >= alpha
+                  ──► sort by abundance desc
+    """
+    tier = background.tier if background is not None else 3
+    read_counts = (em_result.abundances * em_result.n_reads).astype(int)
+    entries = [
+        ReportEntry(
+            organism=name,
+            abundance=float(em_result.abundances[i]),
+            ci_lower=float(ci_lower[i]),
+            ci_upper=float(ci_upper[i]),
+            read_count=int(read_counts[i]),
+            specimen_type=cfg.specimen_type,
+            taxon_id=taxon_ids[i],
+            tier=tier,
+        )
+        for i, name in enumerate(organism_names)
+    ]
+    # CQ3: a batch-matched NTC (Tier 1) supersedes the static contaminant
+    # blocklist; the blocklist still applies at Tier 2/3.
+    if tier != 1:
+        entries = flag_contaminants(entries)
+    if background is not None:
+        entries = [
+            e for e in entries
+            if not is_background(e.taxon_id, e.read_count, em_result.n_reads, background)
+        ]
+    entries.sort(key=lambda e: e.abundance, reverse=True)
+    return entries
+
+
+def write_report(
+    cfg: PipelineConfig,
+    entries: list[ReportEntry],
+    em_result: EMResult,
     amr_hits: list | None = None,
-    entries_override: list[ReportEntry] | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
 
-    if entries_override is not None:
-        entries = entries_override
-    else:
-        read_counts = (em_result.abundances * em_result.n_reads).astype(int)
-        entries = [
-            ReportEntry(
-                organism=name,
-                abundance=float(em_result.abundances[i]),
-                ci_lower=float(ci_lower[i]),
-                ci_upper=float(ci_upper[i]),
-                read_count=int(read_counts[i]),
-                specimen_type=cfg.specimen_type,
-            )
-            for i, name in enumerate(organism_names)
-        ]
-        entries = flag_contaminants(entries)
-    entries.sort(key=lambda e: e.abundance, reverse=True)
+    entries = sorted(entries, key=lambda e: e.abundance, reverse=True)
 
     amr_by_org: dict[str, list[dict]] = {}
     for hit in (amr_hits or []):

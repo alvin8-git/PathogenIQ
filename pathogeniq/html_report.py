@@ -3,14 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
 from .amr import AMRHit
 from .config import PipelineConfig
 from .em import EMResult
 from .host_remove import HostRemovalMetrics
 from .qc import QCMetrics
-from .report import EvidenceGrade, ReportEntry, flag_contaminants
+from .report import EvidenceGrade, ReportEntry
 from .sketch import SketchHit
 
 _GRADE_BADGE: dict[EvidenceGrade, tuple[str, str]] = {
@@ -95,30 +93,16 @@ def write_html_report(
     qc_metrics: QCMetrics,
     hr_metrics: HostRemovalMetrics,
     sketch_hits: list[SketchHit],
-    organism_names: list[str],
+    entries: list[ReportEntry],
     em_result: EMResult,
-    ci_lower: np.ndarray,
-    ci_upper: np.ndarray,
     amr_hits: list[AMRHit] | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
 
-    # Build report entries (same logic as write_report)
-    read_counts = (em_result.abundances * em_result.n_reads).astype(int)
-    entries = [
-        ReportEntry(
-            organism=name,
-            abundance=float(em_result.abundances[i]),
-            ci_lower=float(ci_lower[i]),
-            ci_upper=float(ci_upper[i]),
-            read_count=int(read_counts[i]),
-            specimen_type=cfg.specimen_type,
-        )
-        for i, name in enumerate(organism_names)
-    ]
-    entries = flag_contaminants(entries)
-    entries.sort(key=lambda e: e.abundance, reverse=True)
+    # entries come pre-built (tier, contaminants, background filter applied) from
+    # report.build_entries — the same list the JSON/TSV/PDF renderers use.
+    entries = sorted(entries, key=lambda e: e.abundance, reverse=True)
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     sample_name = cfg.input_fastq.name

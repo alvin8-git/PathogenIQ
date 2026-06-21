@@ -4,13 +4,22 @@ from dataclasses import replace
 import numpy as np
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 from pathogeniq.em import EMResult
+from pathogeniq.background import build_background
 from pathogeniq.report import (
     write_report,
+    build_entries,
     ReportEntry,
     EvidenceGrade,
     GradingInput,
     grade,
 )
+
+
+def _write(cfg, names, em, lower, upper):
+    """Build entries (Tier 3, no background) and write the report — mirrors the
+    pipeline path now that write_report renders pre-built entries."""
+    entries = build_entries(cfg, names, em, lower, upper, [""] * len(names))
+    return write_report(cfg, entries, em)
 
 
 def _gi(**kw):
@@ -94,7 +103,7 @@ def test_write_report_creates_tsv(tmp_path):
     names = ["Escherichia coli", "Klebsiella pneumoniae", "Cutibacterium acnes"]
     lower = np.array([0.65, 0.23, 0.005])
     upper = np.array([0.75, 0.33, 0.04])
-    write_report(cfg, names, em, lower, upper)
+    _write(cfg, names, em, lower, upper)
     tsv = tmp_path / "report" / "pathogeniq_report.tsv"
     assert tsv.exists()
 
@@ -105,7 +114,7 @@ def test_write_report_creates_json(tmp_path):
     names = ["Escherichia coli", "Klebsiella pneumoniae", "Cutibacterium acnes"]
     lower = np.array([0.65, 0.23, 0.005])
     upper = np.array([0.75, 0.33, 0.04])
-    write_report(cfg, names, em, lower, upper)
+    _write(cfg, names, em, lower, upper)
     jsn = tmp_path / "report" / "pathogeniq_report.json"
     assert jsn.exists()
     with open(jsn) as f:
@@ -147,7 +156,7 @@ def test_tsv_columns(tmp_path):
     names = ["Organism A", "Organism B", "Organism C"]
     lower = np.array([0.60, 0.20, 0.00])
     upper = np.array([0.80, 0.36, 0.04])
-    write_report(cfg, names, em, lower, upper)
+    _write(cfg, names, em, lower, upper)
     tsv = tmp_path / "report" / "pathogeniq_report.tsv"
     with open(tsv) as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -166,7 +175,7 @@ def test_report_json_includes_contaminant_risk(tmp_path):
     names = ["Staphylococcus aureus", "Cutibacterium acnes", "Escherichia coli"]
     lower = np.array([0.60, 0.01, 0.20])
     upper = np.array([0.80, 0.10, 0.36])
-    write_report(cfg, names, em, lower, upper)
+    _write(cfg, names, em, lower, upper)
     json_path = tmp_path / "report" / "pathogeniq_report.json"
     with open(json_path) as f:
         data = json.load(f)
@@ -239,15 +248,29 @@ def test_report_flags_invalid_stats(tmp_path):
             specimen_type=SpecimenType.BLOOD,
         ),
     ]
-    write_report(
-        cfg, ["Degenerate org"], em,
-        np.array([0.0]), np.array([0.0]),
-        entries_override=entries,
-    )
+    write_report(cfg, entries, em)
     with open(tmp_path / "report" / "pathogeniq_report.json") as f:
         finding = json.load(f)["findings"][0]
     assert finding["invalid_stats"] is True
     assert finding["grade"] == "X"
+
+
+def test_build_entries_sets_tier_and_filters_background(tmp_path):
+    # the consolidated builder is the single path all renderers use: it must set
+    # the tier AND drop background taxa (previously HTML skipped both)
+    cfg = _cfg(tmp_path)
+    em = EMResult(abundances=np.array([0.9, 0.1]), n_reads=1_000_000, n_organisms=2, iterations=5)
+    names = ["Real pathogen", "Reagent bug"]
+    lower = np.array([0.88, 0.05])
+    upper = np.array([0.92, 0.15])
+    taxon_ids = ["GCF_real", "GCF_bg"]
+    # GCF_bg sits at the sample's level in the NTC (filtered); GCF_real is absent (kept)
+    bg = build_background([({"GCF_bg": 100_000}, 1_000_000)], tier=2)
+    entries = build_entries(cfg, names, em, lower, upper, taxon_ids, background=bg)
+    orgs = [e.organism for e in entries]
+    assert "Real pathogen" in orgs
+    assert "Reagent bug" not in orgs
+    assert all(e.tier == 2 for e in entries)
 
 
 def test_report_includes_taxon_id(tmp_path):
@@ -264,11 +287,7 @@ def test_report_includes_taxon_id(tmp_path):
             taxon_id="GCF_000005845.2",
         ),
     ]
-    write_report(
-        cfg, ["Escherichia coli"], em,
-        np.array([0.65]), np.array([0.75]),
-        entries_override=entries,
-    )
+    write_report(cfg, entries, em)
     with open(tmp_path / "report" / "pathogeniq_report.json") as f:
         data = json.load(f)
     assert data["findings"][0]["taxon_id"] == "GCF_000005845.2"
@@ -283,7 +302,7 @@ def test_report_tsv_includes_contaminant_risk(tmp_path):
     names = ["Staphylococcus aureus", "Cutibacterium acnes"]
     lower = np.array([0.60, 0.01])
     upper = np.array([0.80, 0.10])
-    write_report(cfg, names, em, lower, upper)
+    _write(cfg, names, em, lower, upper)
     tsv = tmp_path / "report" / "pathogeniq_report.tsv"
     with open(tsv) as f:
         reader = csv.DictReader(f, delimiter="\t")

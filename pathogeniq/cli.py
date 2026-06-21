@@ -5,18 +5,16 @@ from pathlib import Path
 from .amr import run_amr_screen
 from .background import (
     build_background,
-    is_background,
     load_background_table,
     load_default_background,
 )
 from .config import PipelineConfig, ReadType, SpecimenType
-from .contaminants import flag_contaminants
 from .em import bootstrap_ci, em_abundance
 from .host_remove import run_host_removal
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
-from .report import ReportEntry, write_report
+from .report import build_entries, write_report
 from .sketch import run_sketch_screen
 from .align import run_targeted_alignment
 
@@ -97,47 +95,22 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     click.echo(f"      NTC background tier: {tier}"
                + ("" if background is not None else " (uncorrected)"))
 
-    read_counts = (em_result.abundances * em_result.n_reads).astype(int)
-    entries = [
-        ReportEntry(
-            organism=name,
-            abundance=float(em_result.abundances[i]),
-            ci_lower=float(ci_lower[i]),
-            ci_upper=float(ci_upper[i]),
-            read_count=int(read_counts[i]),
-            specimen_type=cfg.specimen_type,
-            taxon_id=align_result.taxon_ids[i],
-            tier=tier,
-        )
-        for i, name in enumerate(align_result.organism_names)
-    ]
-    # CQ3: a batch-matched NTC (Tier 1) supersedes the static contaminant
-    # blocklist; the blocklist still applies at Tier 2/3.
-    if tier != 1:
-        entries = flag_contaminants(entries)
-    if background is not None:
-        kept = [
-            e for e in entries
-            if not is_background(e.taxon_id, e.read_count, em_result.n_reads, background)
-        ]
-        removed = len(entries) - len(kept)
-        if removed:
-            click.echo(f"      {removed} taxon(s) removed as background")
-        entries = kept
-
-    report_dir = write_report(
+    entries = build_entries(
         cfg, align_result.organism_names, em_result, ci_lower, ci_upper,
-        amr_hits=amr_hits, entries_override=entries,
+        align_result.taxon_ids, background=background,
     )
+    removed = len(align_result.organism_names) - len(entries)
+    if removed:
+        click.echo(f"      {removed} taxon(s) removed as background")
+
+    report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits)
         click.echo(f"PDF report:        {pdf_path}")
 
     html_path = write_html_report(
-        cfg, qc_metrics, hr_metrics, hits,
-        align_result.organism_names, em_result, ci_lower, ci_upper,
-        amr_hits=amr_hits,
+        cfg, qc_metrics, hr_metrics, hits, entries, em_result, amr_hits=amr_hits,
     )
     click.echo(f"HTML report:       {html_path}")
 

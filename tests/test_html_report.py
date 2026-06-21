@@ -6,6 +6,7 @@ from pathogeniq.host_remove import HostRemovalMetrics
 from pathogeniq.sketch import SketchHit
 from pathogeniq.em import EMResult
 from pathogeniq.amr import AMRHit
+from pathogeniq.report import build_entries
 from pathogeniq.html_report import write_html_report
 
 
@@ -31,13 +32,14 @@ def _inputs(tmp_path):
     em = EMResult(abundances=np.array([0.80, 0.20]), n_reads=50000, n_organisms=2, iterations=12)
     ci_lower = np.array([0.75, 0.15])
     ci_upper = np.array([0.85, 0.25])
-    return qc, hr, hits, organisms, em, ci_lower, ci_upper
+    entries = build_entries(_cfg(tmp_path), organisms, em, ci_lower, ci_upper, ["", ""])
+    return qc, hr, hits, entries, em
 
 
 def test_html_report_creates_file(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     assert path.exists()
     assert path.suffix == ".html"
     assert path.stat().st_size > 2000
@@ -45,15 +47,15 @@ def test_html_report_creates_file(tmp_path):
 
 def test_html_report_output_path(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     assert path == tmp_path / "report" / "pathogeniq_report.html"
 
 
 def test_html_report_contains_key_sections(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     content = path.read_text()
     assert "Quality Control" in content
     assert "Host Removal" in content
@@ -64,8 +66,8 @@ def test_html_report_contains_key_sections(tmp_path):
 
 def test_html_report_organisms_present(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     content = path.read_text()
     assert "Staphylococcus aureus" in content
     assert "Escherichia coli" in content
@@ -73,9 +75,9 @@ def test_html_report_organisms_present(tmp_path):
 
 def test_html_report_with_amr_hits(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
     amr = [AMRHit("mecA", "beta-lactam", 99.5, 100.0, "Staphylococcus aureus", "card")]
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu, amr_hits=amr)
+    path = write_html_report(cfg, qc, hr, hits, entries, em, amr_hits=amr)
     content = path.read_text()
     assert "mecA" in content
     assert "beta-lactam" in content
@@ -83,8 +85,8 @@ def test_html_report_with_amr_hits(tmp_path):
 
 def test_html_report_no_amr_message(tmp_path):
     cfg = _cfg(tmp_path)
-    qc, hr, hits, orgs, em, cil, ciu = _inputs(tmp_path)
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     content = path.read_text()
     assert "No AMR genes detected" in content
 
@@ -94,10 +96,10 @@ def test_html_report_contaminant_flag(tmp_path):
     qc = QCMetrics(total_reads=100_000, passing_reads=95_000)
     hr = HostRemovalMetrics(total_reads=95_000, human_reads=1_000, nonhuman_reads=94_000)
     hits = [SketchHit("Cutibacterium acnes", 0.30, tmp_path / "cutibac.fna")]
-    orgs = ["Cutibacterium acnes"]
     em = EMResult(abundances=np.array([1.0]), n_reads=500, n_organisms=1, iterations=5)
     cil = np.array([0.90])
     ciu = np.array([1.00])
-    path = write_html_report(cfg, qc, hr, hits, orgs, em, cil, ciu)
+    entries = build_entries(cfg, ["Cutibacterium acnes"], em, cil, ciu, [""])
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
     content = path.read_text()
     assert "contaminant" in content
