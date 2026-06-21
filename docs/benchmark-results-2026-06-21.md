@@ -52,3 +52,20 @@ Configs scored with `scripts/06_benchmark.py` against the known Zymo composition
   (c) a better dispersion model (Plan-4) so high-abundance real organisms are not
   suppressed.
 - Add CAMI communities + a held-out split for a defensible PR-AUC.
+
+## Update — Plan-3D cross-mapping dedup (same day)
+
+Added `crossmap.py` and wired it into grading + the benchmark. On the Standard-8
+Zymo report it flagged all 4 Shigella species (flexneri, sonnei, dysenteriae,
+boydii) as E. coli cross-mappers and dropped them (Grade X):
+
+| config (Std-8) | precision | recall | TP | FP |
+|---|---|---|---|---|
+| kraken+grading (pre-dedup) | 0.051 | 0.80 | 8 | 148 |
+| kraken+grading (with dedup) | 0.053 | 0.80 | 8 | 144 |
+
+Key contrast with the NTC background: the dedup is **precision-positive with zero
+recall cost** (it removes only phantom relatives of a dominant real organism),
+whereas the kitome background dropped *real* E. coli/Klebsiella. The dedup is the
+right tool for this artifact class; the background still needs Plan-4 + non-spiked
+blanks before it's a net positive.

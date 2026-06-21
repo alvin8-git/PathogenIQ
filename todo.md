@@ -125,7 +125,17 @@ Runs on assembled contigs or directly on reads (via `--minid`/`--mincov` thresho
 
 ---
 
-### 3D — False Positive Deduplication (Shigella/E.coli cross-mapping)
+### 3D — False Positive Deduplication (Shigella/E.coli cross-mapping) — RESOLVED 2026-06-21
+
+**Done:** `pathogeniq/crossmap.py` (`find_crossmappers` / `deduplicate_closely_related`)
+flags the minor member of a known cross-mapping group when a relative outnumbers
+it >=10x, and grade() drops it as X. Wired into build_entries + the benchmark.
+Benchmark (Zymo/Standard-8): removed all 4 Shigella spp. as E. coli cross-mappers,
+precision up, zero recall cost. Deviation from the spec below: drops (Grade X)
+rather than demoting via contaminant_risk — the benchmark showed removal is needed.
+
+Original spec (historical):
+
 
 **What:** Post-EM deduplication step to collapse phylogenetically redundant detections.
 
