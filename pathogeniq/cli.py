@@ -3,7 +3,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from .amr import run_amr_screen
-from .background import build_background, is_background, load_background_table
+from .background import (
+    build_background,
+    is_background,
+    load_background_table,
+    load_default_background,
+)
 from .config import PipelineConfig, ReadType, SpecimenType
 from .contaminants import flag_contaminants
 from .em import bootstrap_ci, em_abundance
@@ -168,4 +173,5 @@ def _resolve_background(cfg, ntc_fastq, background_table, no_background):
     if ntc_fastq is not None:
         counts, total = _classify_taxon_counts(cfg, ntc_fastq)
         return build_background([(counts, total)], tier=1)
-    return None
+    # Default: the packaged pooled background (Tier 2) if curated; else Tier 3.
+    return load_default_background()

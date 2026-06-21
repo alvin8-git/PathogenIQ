@@ -33,7 +33,25 @@ def test_resolve_background_no_background_returns_none():
 
 
 def test_resolve_background_none_when_no_flags():
+    # no flags + empty packaged default placeholder -> Tier 3 (None)
     assert _resolve_background(None, None, None, False) is None
+
+
+def test_resolve_background_uses_populated_default(tmp_path, monkeypatch):
+    from pathogeniq import background as bg
+    out = tmp_path / "bg.tsv"
+    bg.write_background_table(out, {"GCF_a": 5.0}, tier=2)
+    monkeypatch.setattr("pathogeniq.cli.load_default_background",
+                        lambda: bg.load_background_table(out))
+    model = _resolve_background(None, None, None, False)
+    assert model is not None and model.tier == 2
+
+
+def test_no_background_overrides_populated_default(monkeypatch):
+    # --no-background must force Tier 3 even when a default table exists
+    monkeypatch.setattr("pathogeniq.cli.load_default_background",
+                        lambda: (_ for _ in ()).throw(AssertionError("default must not load")))
+    assert _resolve_background(None, None, None, True) is None
 
 
 def test_resolve_background_table_path(tmp_path):

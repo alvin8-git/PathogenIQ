@@ -4,7 +4,33 @@ from pathogeniq.background import (
     background_pvalue,
     is_background,
     load_background_table,
+    load_default_background,
+    write_background_table,
 )
+
+
+def test_write_then_load_background_table_roundtrip(tmp_path):
+    out = tmp_path / "bg.tsv"
+    write_background_table(out, {"GCF_a": 10.0, "GCF_b": 2.5}, tier=2)
+    model = load_background_table(out)
+    assert model.tier == 2
+    assert abs(model.rates["GCF_a"] - 10.0) < 1e-6
+    assert abs(model.rates["GCF_b"] - 2.5) < 1e-6
+
+
+def test_load_default_background_none_for_empty_placeholder():
+    # the shipped table is a header-only placeholder until curated
+    assert load_default_background() is None
+
+
+def test_load_default_background_uses_populated_table(tmp_path, monkeypatch):
+    out = tmp_path / "bg.tsv"
+    write_background_table(out, {"GCF_a": 7.0}, tier=2)
+    monkeypatch.setattr("pathogeniq.background.default_background_path", lambda: out)
+    model = load_default_background()
+    assert model is not None
+    assert model.tier == 2
+    assert "GCF_a" in model.rates
 
 
 def test_load_background_table_parses_rates_and_tier(tmp_path):

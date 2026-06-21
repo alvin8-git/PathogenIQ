@@ -1,0 +1,16 @@
+# PathogenIQ pooled NTC background — Tier 2 default path
+# tier=2
+#
+# Per-taxon reagent/kitome background rates in RPM (pseudocount baked in),
+# pooled from public no-template-control datasets. When this table has data
+# rows, the pipeline uses it by default (Tier 2) so NB background subtraction
+# runs for every user without a batch-matched control.
+#
+# SEED PLACEHOLDER — no data rows yet. Populate by running:
+#   python scripts/build_background_default.py --ntc <ntc1.fq.gz> [<ntc2.fq.gz> ...] \
+#       --db databases/tier1/tier1_pathogens.sbt.zip --host-ref databases/human_ref/GRCh38.fa
+# Suggested source: Salter et al. 2014 reagent-contamination controls (ENA ERP006808).
+#
+# Until populated, load_default_background() returns None and the pipeline
+# falls back to Tier 3 (uncorrected) rather than capping grades with no benefit.
+taxon_id	rpm

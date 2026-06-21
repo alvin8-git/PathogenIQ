@@ -123,6 +123,31 @@ def load_background_table(
     return BackgroundModel(rates=rates, n_controls=0, dispersion=dispersion, tier=tier)
 
 
+def default_background_path() -> Path:
+    """Path to the packaged pooled background table (Tier-2 default)."""
+    return Path(__file__).resolve().parent / "data" / "background_default.tsv"
+
+
+def load_default_background() -> BackgroundModel | None:
+    """Load the packaged pooled background (Tier-2 default path), or None when it
+    is missing or still an empty placeholder — in which case the caller falls
+    back to Tier 3 rather than capping grades with no background benefit."""
+    path = default_background_path()
+    if not path.exists():
+        return None
+    model = load_background_table(path)
+    return model if model.rates else None
+
+
+def write_background_table(path: Path, rates: dict[str, float], *, tier: int = 2) -> None:
+    """Write per-taxon background rates as a ``# tier=N`` table that
+    load_background_table can read back. Used by scripts/build_background_default.py."""
+    lines = [f"# tier={tier}", "taxon_id\trpm"]
+    for taxon_id, rpm in sorted(rates.items()):
+        lines.append(f"{taxon_id}\t{rpm:.6g}")
+    Path(path).write_text("\n".join(lines) + "\n")
+
+
 def background_pvalue(
     taxon_id: str,
     sample_count: int,
