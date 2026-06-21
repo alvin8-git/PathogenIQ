@@ -53,13 +53,18 @@ def graded_kept(taxa, specimen, read_floor) -> set[str]:
     return kept
 
 
+def _f1(p: float, r: float) -> float:
+    return 2 * p * r / (p + r) if (p + r) else 0.0
+
+
 def metrics(taxa, truth, specimen, read_floor):
     raw_scored = [(t.taxid, float(t.reads)) for t in taxa]
     kept = graded_kept(taxa, specimen, read_floor)
     g_scored = [(t.taxid, float(t.reads)) for t in taxa if t.taxid in kept]
     raw_p, _ = precision_recall({t.taxid for t in taxa}, truth)
-    g_p, _ = precision_recall(kept, truth)
-    return average_precision(raw_scored, truth), average_precision(g_scored, truth), raw_p, g_p
+    g_p, g_r = precision_recall(kept, truth)
+    return (average_precision(raw_scored, truth), average_precision(g_scored, truth),
+            raw_p, g_p, g_r)
 
 
 def main() -> None:
@@ -83,21 +88,22 @@ def main() -> None:
         train, test = comms[:args.train], comms[args.train:]
         best = (-1.0, read_floor)
         for f in (0, 2, 5, 10, 20, 50, 100, 200, 500):
-            mean_p = statistics.mean(metrics(t, tr, sp, f)[3] for (_n, t, tr, sp) in train)
-            if mean_p > best[0]:
-                best = (mean_p, f)
+            # calibrate on F1 (balanced) — precision alone picks a degenerate floor
+            mean_f1 = statistics.mean(_f1(*metrics(t, tr, sp, f)[3:5]) for (_n, t, tr, sp) in train)
+            if mean_f1 > best[0]:
+                best = (mean_f1, f)
         read_floor = best[1]
-        print(f"calibrated read floor = {read_floor} (train mean graded precision {best[0]:.3f})\n")
+        print(f"calibrated read floor = {read_floor} (train mean F1 {best[0]:.3f})\n")
 
-    print(f"{'community':18s} {'raw PR':>7s} {'grd PR':>7s} {'raw P':>7s} {'grd P':>7s}")
+    print(f"{'community':18s} {'raw PR':>7s} {'grd PR':>7s} {'raw P':>7s} {'grd P':>7s} {'grd R':>7s}")
     rows = []
     for name, taxa, truth, sp in test:
-        r_ap, g_ap, r_p, g_p = metrics(taxa, truth, sp, read_floor)
-        rows.append((r_ap, g_ap, r_p, g_p))
-        print(f"{name:18s} {r_ap:7.3f} {g_ap:7.3f} {r_p:7.3f} {g_p:7.3f}")
+        m = metrics(taxa, truth, sp, read_floor)
+        rows.append(m)
+        print(f"{name:18s} {m[0]:7.3f} {m[1]:7.3f} {m[2]:7.3f} {m[3]:7.3f} {m[4]:7.3f}")
     if rows:
-        mean = [statistics.mean(r[i] for r in rows) for i in range(4)]
-        print(f"\n{'MEAN (held-out)':18s} {mean[0]:7.3f} {mean[1]:7.3f} {mean[2]:7.3f} {mean[3]:7.3f}")
+        mean = [statistics.mean(r[i] for r in rows) for i in range(5)]
+        print(f"\n{'MEAN (held-out)':18s} {mean[0]:7.3f} {mean[1]:7.3f} {mean[2]:7.3f} {mean[3]:7.3f} {mean[4]:7.3f}")
         print(f"grading precision lift (mean): {mean[3] - mean[2]:+.3f}")
 
 
