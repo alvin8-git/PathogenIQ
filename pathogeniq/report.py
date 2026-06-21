@@ -29,6 +29,45 @@ _MIN_READS: dict[SpecimenType, int] = {
 _MAX_CI_WIDTH_A = 0.15
 
 
+@dataclass(frozen=True)
+class GradingInput:
+    """Normalized inputs the grading rule reads. Built from a ReportEntry today;
+    the Kraken2 benchmark adapter (T10) will build the same struct from a
+    classifier table. Keeping grading a pure function of this struct gives one
+    grade path shared by the pipeline and the benchmark (DRY)."""
+    read_count: int
+    abundance: float
+    ci_width: float
+    contaminant_risk: bool
+    specimen_type: SpecimenType
+
+
+def _has_invalid_stats(g: GradingInput) -> bool:
+    """Degenerate, non-gradeable inputs: NaN/inf abundance or CI width, or a
+    negative read count (INT64_MIN underflow from astype(int) on a NaN
+    abundance). A non-finite ci_width also catches a NaN/inf in either CI bound."""
+    return (
+        g.read_count < 0
+        or not math.isfinite(g.abundance)
+        or not math.isfinite(g.ci_width)
+    )
+
+
+def grade(g: GradingInput) -> EvidenceGrade:
+    """Pure grading rule — the single source of truth for A/B/C/X, shared by
+    ReportEntry.grade and the benchmark adapter."""
+    if _has_invalid_stats(g):
+        return EvidenceGrade.X
+    min_reads = _MIN_READS.get(g.specimen_type, 5)
+    if g.read_count >= min_reads and g.ci_width <= _MAX_CI_WIDTH_A and not g.contaminant_risk:
+        return EvidenceGrade.A
+    if g.read_count >= min_reads and not g.contaminant_risk:
+        return EvidenceGrade.B
+    if g.read_count >= min_reads:
+        return EvidenceGrade.C
+    return EvidenceGrade.X
+
+
 @dataclass
 class ReportEntry:
     organism: str
@@ -40,32 +79,25 @@ class ReportEntry:
     contaminant_risk: bool = False
     taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
 
-    @property
-    def invalid_stats(self) -> bool:
-        """True if upstream values are degenerate and not gradeable: a NaN/inf
-        abundance or CI bound, or a negative read count (INT64_MIN underflow from
-        `astype(int)` on a NaN abundance). Surfaced in the report so a degenerate
-        finding is visibly flagged rather than silently scored Grade X."""
-        return (
-            self.read_count < 0
-            or not math.isfinite(self.abundance)
-            or not math.isfinite(self.ci_lower)
-            or not math.isfinite(self.ci_upper)
+    def as_input(self) -> GradingInput:
+        """Normalize this entry into the struct the grading rule reads."""
+        return GradingInput(
+            read_count=self.read_count,
+            abundance=self.abundance,
+            ci_width=self.ci_upper - self.ci_lower,
+            contaminant_risk=self.contaminant_risk,
+            specimen_type=self.specimen_type,
         )
 
     @property
+    def invalid_stats(self) -> bool:
+        """Surfaced in the report so a degenerate finding is visibly flagged
+        rather than silently scored Grade X."""
+        return _has_invalid_stats(self.as_input())
+
+    @property
     def grade(self) -> EvidenceGrade:
-        if self.invalid_stats:
-            return EvidenceGrade.X
-        min_reads = _MIN_READS.get(self.specimen_type, 5)
-        ci_width = self.ci_upper - self.ci_lower
-        if self.read_count >= min_reads and ci_width <= _MAX_CI_WIDTH_A and not self.contaminant_risk:
-            return EvidenceGrade.A
-        if self.read_count >= min_reads and not self.contaminant_risk:
-            return EvidenceGrade.B
-        if self.read_count >= min_reads:
-            return EvidenceGrade.C
-        return EvidenceGrade.X
+        return grade(self.as_input())
 
 
 def write_report(

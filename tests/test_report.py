@@ -3,7 +3,61 @@ import csv
 import numpy as np
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 from pathogeniq.em import EMResult
-from pathogeniq.report import write_report, ReportEntry, EvidenceGrade
+from pathogeniq.report import (
+    write_report,
+    ReportEntry,
+    EvidenceGrade,
+    GradingInput,
+    grade,
+)
+
+
+def _gi(**kw):
+    base = dict(
+        read_count=700,
+        abundance=0.70,
+        ci_width=0.10,
+        contaminant_risk=False,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    base.update(kw)
+    return GradingInput(**base)
+
+
+def test_grade_fn_grade_a():
+    assert grade(_gi()) == EvidenceGrade.A
+
+
+def test_grade_fn_b_when_ci_wide():
+    # wide CI, not a contaminant -> drops from A to B
+    assert grade(_gi(ci_width=0.50)) == EvidenceGrade.B
+
+
+def test_grade_fn_c_when_contaminant():
+    # contaminant flag fails both A and B (which require not-contaminant) -> C
+    assert grade(_gi(contaminant_risk=True)) == EvidenceGrade.C
+
+
+def test_grade_fn_x_low_reads():
+    assert grade(_gi(read_count=1)) == EvidenceGrade.X  # blood min_reads=3
+
+
+def test_grade_fn_x_on_invalid():
+    assert grade(_gi(abundance=float("nan"))) == EvidenceGrade.X
+    assert grade(_gi(ci_width=float("nan"))) == EvidenceGrade.X
+    assert grade(_gi(read_count=-5)) == EvidenceGrade.X
+
+
+def test_report_entry_grade_delegates_to_fn():
+    entry = ReportEntry(
+        organism="Escherichia coli",
+        abundance=0.70,
+        ci_lower=0.65,
+        ci_upper=0.75,
+        read_count=700,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.grade == grade(entry.as_input())
 
 
 def _cfg(tmp_path):
