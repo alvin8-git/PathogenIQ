@@ -69,3 +69,28 @@ recall cost** (it removes only phantom relatives of a dominant real organism),
 whereas the kitome background dropped *real* E. coli/Klebsiella. The dedup is the
 right tool for this artifact class; the background still needs Plan-4 + non-spiked
 blanks before it's a net positive.
+
+## Update — held-out across Zymo D6300 runs (`scripts/08_heldout_pr_auc.py`)
+
+Three sequencing runs of the same standard (UDB-32/-40/-48), classified with the
+Standard-8 DB. Held-out split: the read floor is calibrated (on F1) on r1, then
+reported on the held-out r2 + r3.
+
+| | raw precision | graded precision | graded recall |
+|---|---|---|---|
+| fixed grading (all runs out-of-sample) | 0.009 | 0.051 | ~1.0 |
+| **calibrated floor=500 (held-out r2+r3)** | 0.009 | **0.875** | **0.700** |
+
+A read floor learned on one run generalizes to the held-out two: precision
+0.875, recall 0.700 (F1 0.778) — a ~90x precision lift over raw, at a recall cost
+(3 of 10 Zymo organisms fall below the floor). Graded PR-AUC is *lower* (0.578 vs
+0.651 raw) because aggressive filtering trades ranking-recall for operating-point
+precision; both are reported.
+
+**Scope caveat:** this is one community (Zymo D6300) across runs — it demonstrates
+the held-out methodology and run-to-run generalization, not community diversity.
+True multi-community PR-AUC needs CAMI reads (portal-gated at
+data.cami-challenge.org/participate, multi-GB). The harness and the CAMI
+gold-standard truth parser (`parse_cami_profile`, validated on the mouse-gut
+profile -> 549 species) are built and tested, so CAMI communities slot straight
+in once their reads are classified to a .kreport.
