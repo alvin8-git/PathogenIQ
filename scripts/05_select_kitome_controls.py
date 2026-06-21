@@ -109,15 +109,16 @@ def main() -> None:
     if model is None:
         raise SystemExit("Selected runs produced no taxa above the support floor.")
     notes = [
-        f"PROVENANCE: scripts/05_select_kitome_controls.py from a spiked dilution",
+        "PROVENANCE: scripts/05_select_kitome_controls.py from a spiked dilution",
         f"  series; kept runs with spike fraction <= {args.max_spike_frac} "
         f"(spike {','.join(spikes)}); pooled from {model.n_controls} control(s); "
         f"min_reads={args.min_reads}.",
-        "CAVEAT (cross-mapping): the source is a spiked study, so residual spike",
-        "  reads cross-map across closely related taxa (E. coli / Shigella /",
-        "  Salmonella / Klebsiella for a Salmonella spike). Those rates may be",
-        "  INFLATED and could over-suppress genuine infections by them. A clean",
-        "  kitome default needs blanks from a non-spiked study.",
+        "CAVEAT: Enterobacteriaceae here (E. coli, Klebsiella, Enterobacter) are",
+        "  genuine reagent kitome, but the Shigella entries are an E. coli/Shigella",
+        "  reference cross-mapping artifact (refs >95% identical) and should be",
+        "  deduplicated (todo.md Plan-3D). This is a foreign, frozen prior from one",
+        "  2014 study/lab; a per-batch NTC (Tier 1) is stronger. Verified: rates are",
+        "  stable across spike thresholds, so they are NOT spike cross-mapping.",
     ]
     out = Path(args.out) if args.out else default_background_path()
     write_background_table(out, model.rates, tier=2, notes=notes)
