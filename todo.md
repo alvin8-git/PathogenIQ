@@ -168,11 +168,18 @@ WRONG twice over:
   floors. The `min_reads` floor (now in build_background, default 2) removes the
   singletons, but one thin blank still can't anchor a credible default.
 
-**Where to start:** download additional reagent/kitome blank datasets (other
-kitome studies; more water/NTC controls), run them through
-`scripts/build_background_default.py --ntc <blanks...> --min-reads 2`, and only
-then commit a populated `background_default.tsv`. Until then the default stays
-Tier 3 (uncorrected), which is correct.
+**Status (v1 SHIPPED):** `background_default.tsv` is now populated (14 taxa)
+from 15 spike-free (<=10% Salmonella) runs of Salter ERP006808, selected by
+`scripts/05_select_kitome_controls.py`. Tier 2 auto-activates. Caveat header
+in-file: the Enterobacteriaceae are genuine kitome (verified stable across spike
+thresholds — NOT spike cross-mapping), but the Shigella entries are E. coli/
+Shigella reference redundancy (Plan-3D dedup), and it's a foreign 2014 prior.
+
+**Still to improve (not blocking):** (a) pool non-spiked blank datasets (other
+kitome studies) for a cleaner, less Enterobacteriaceae-heavy prior;
+(b) Plan-3D dedup to collapse the E. coli/Shigella artifact; (c) periodically
+refresh from the lab's own NTCs. The cleanest results still need a per-batch
+NTC (Tier 1) — the shipped prior is a documented fallback, capped at Grade B.
 
 ### 4-FollowUp — Validate the single-NTC NB dispersion prior
 
@@ -185,6 +192,28 @@ to it, the single-NTC (Tier 2) path's controlled-α guarantee is hollow.
 
 **Depends on:** the multi-community truth set (the P1 data-acquisition task for the benchmark).
 Cannot run until labeled data exists.
+
+### T10 — Benchmark (CORE BUILT; full run blocked on data)
+
+**Built + tested:** `pathogeniq/benchmark.py` (Kraken2 report parser,
+kraken_to_grading_inputs adapter with a Wilson-CI stand-in for the bootstrap,
+and PR scoring: average_precision / precision_at_recall) + `scripts/06_benchmark.py`
+(kraken-raw vs kraken+grading on a Kraken2 report vs a truth-taxid set).
+Smoke-tested on synthetic data.
+
+**Metric finding (baked into the harness output):** grading's value is
+false-positive removal, which moves *operating-point precision*; PR-AUC stays
+flat when those FPs are already bottom-ranked by read count. Report both deltas.
+
+**Blockers for the real run:**
+- Kraken2 DB + run on CAMI/Zymo reads to produce `.kreport` files (CAMI reads
+  are portal-gated at data.cami-challenge.org; Zymo reads are on disk).
+- Truth taxid lists from the CAMI gold-standard profiles / known Zymo composition.
+- taxid<->GCF map so the NB background filter (GCF-keyed) can join Kraken taxids
+  (or rebuild the kitome background through Kraken2, taxid-keyed).
+- A CZID-export parser for the third config.
+- Held-out split once there are >=3-5 labeled communities (one Zymo can't anchor
+  a PR curve — outside-voice c).
 
 **Where to start:** sweep the dispersion prior over a plausible range, measure FPR at fixed α
 on the held-out split, report sensitivity.
