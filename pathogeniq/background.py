@@ -154,10 +154,22 @@ def load_default_background() -> BackgroundModel | None:
     return model if model.rates else None
 
 
-def write_background_table(path: Path, rates: dict[str, float], *, tier: int = 2) -> None:
+def write_background_table(
+    path: Path,
+    rates: dict[str, float],
+    *,
+    tier: int = 2,
+    notes: list[str] | None = None,
+) -> None:
     """Write per-taxon background rates as a ``# tier=N`` table that
-    load_background_table can read back. Used by scripts/build_background_default.py."""
-    lines = [f"# tier={tier}", "taxon_id\trpm"]
+    load_background_table can read back. ``notes`` are written as ``#`` comment
+    lines (provenance / caveats) and ignored by the loader. Used by the
+    build/select scripts."""
+    lines = [f"# tier={tier}"]
+    for note in (notes or []):
+        for ln in note.splitlines():
+            lines.append(f"# {ln}")
+    lines.append("taxon_id\trpm")
     for taxon_id, rpm in sorted(rates.items()):
         lines.append(f"{taxon_id}\t{rpm:.6g}")
     Path(path).write_text("\n".join(lines) + "\n")

@@ -26,6 +26,7 @@ Note: this assumes a SINGLE known spike organism (the Salter design). For a
 dataset with multiple spikes, pass each as a repeated --spike-taxon prefix.
 """
 import argparse
+import json
 from pathlib import Path
 
 from pathogeniq.background import build_background, default_background_path, write_background_table
@@ -76,7 +77,16 @@ def main() -> None:
             host_reference=Path(args.host_ref),
             threads=args.threads,
         )
-        counts, total = _classify_taxon_counts(cfg, Path(fq))
+        # cache classification per sample so threshold tweaks don't re-run the
+        # (expensive) QC->host->sketch->align stages
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
+        cache = cfg.output_dir / "counts.json"
+        if cache.exists():
+            d = json.loads(cache.read_text())
+            counts, total = {k: int(v) for k, v in d["counts"].items()}, int(d["total"])
+        else:
+            counts, total = _classify_taxon_counts(cfg, Path(fq))
+            cache.write_text(json.dumps({"counts": counts, "total": total}))
         frac = spike_fraction(counts, total, spikes)
         classified.append((Path(fq).name, counts, total, frac))
 
@@ -98,8 +108,19 @@ def main() -> None:
     model = build_background(selected, tier=2, min_reads=args.min_reads)
     if model is None:
         raise SystemExit("Selected runs produced no taxa above the support floor.")
+    notes = [
+        f"PROVENANCE: scripts/05_select_kitome_controls.py from a spiked dilution",
+        f"  series; kept runs with spike fraction <= {args.max_spike_frac} "
+        f"(spike {','.join(spikes)}); pooled from {model.n_controls} control(s); "
+        f"min_reads={args.min_reads}.",
+        "CAVEAT (cross-mapping): the source is a spiked study, so residual spike",
+        "  reads cross-map across closely related taxa (E. coli / Shigella /",
+        "  Salmonella / Klebsiella for a Salmonella spike). Those rates may be",
+        "  INFLATED and could over-suppress genuine infections by them. A clean",
+        "  kitome default needs blanks from a non-spiked study.",
+    ]
     out = Path(args.out) if args.out else default_background_path()
-    write_background_table(out, model.rates, tier=2)
+    write_background_table(out, model.rates, tier=2, notes=notes)
     print(f"Wrote {len(model.rates)} taxa to {out} (pooled from {model.n_controls} kitome control(s))")
 
 

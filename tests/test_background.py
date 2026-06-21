@@ -18,6 +18,19 @@ def test_write_then_load_background_table_roundtrip(tmp_path):
     assert abs(model.rates["GCF_b"] - 2.5) < 1e-6
 
 
+def test_write_background_table_notes_roundtrip(tmp_path):
+    out = tmp_path / "bg.tsv"
+    write_background_table(out, {"GCF_a": 1.0}, tier=2,
+                           notes=["CAVEAT: cross-mapping", "second line"])
+    txt = out.read_text()
+    assert "# CAVEAT: cross-mapping" in txt
+    assert "# second line" in txt
+    # the loader ignores comment lines and still parses tier + rates
+    m = load_background_table(out)
+    assert m.tier == 2
+    assert m.rates["GCF_a"] == 1.0
+
+
 def test_load_default_background_none_for_empty_table(tmp_path, monkeypatch):
     # an empty (header-only) default table -> None, so the caller stays Tier 3.
     # Monkeypatched so the test does not depend on the shipped file's contents.
