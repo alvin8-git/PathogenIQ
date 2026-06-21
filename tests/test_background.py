@@ -3,7 +3,29 @@ from pathogeniq.background import (
     build_background,
     background_pvalue,
     is_background,
+    load_background_table,
 )
+
+
+def test_load_background_table_parses_rates_and_tier(tmp_path):
+    table = tmp_path / "bg.tsv"
+    table.write_text("# tier=2\ntaxon_id\trpm\nGCF_000001405.40\t12.3\nGCF_000007545.1\t4.5\n")
+    model = load_background_table(table)
+    assert model.tier == 2
+    assert abs(model.rates["GCF_000001405.40"] - 12.3) < 1e-6
+    assert abs(model.rates["GCF_000007545.1"] - 4.5) < 1e-6
+
+
+def test_load_background_table_defaults_tier_2(tmp_path):
+    table = tmp_path / "bg.tsv"
+    table.write_text("taxon_id\trpm\nGCF_x\t1.0\n")
+    assert load_background_table(table).tier == 2
+
+
+def test_load_background_table_tier_1_header(tmp_path):
+    table = tmp_path / "bg.tsv"
+    table.write_text("# tier=1\ntaxon_id\trpm\nGCF_x\t1.0\n")
+    assert load_background_table(table).tier == 1
 
 
 def test_build_background_rate_is_mean_rpm_plus_pseudocount():

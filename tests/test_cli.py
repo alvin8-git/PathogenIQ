@@ -1,7 +1,7 @@
 import numpy as np
 from click.testing import CliRunner
 from unittest.mock import patch
-from pathogeniq.cli import cli
+from pathogeniq.cli import cli, _resolve_background
 from pathogeniq.em import EMResult
 from pathogeniq.qc import QCMetrics
 from pathogeniq.host_remove import HostRemovalMetrics
@@ -23,6 +23,46 @@ def test_cli_run_help():
     assert "--input" in result.output
     assert "--specimen" in result.output
     assert "--read-type" in result.output
+    assert "--ntc" in result.output
+    assert "--background" in result.output
+    assert "--no-background" in result.output
+
+
+def test_resolve_background_no_background_returns_none():
+    assert _resolve_background(None, None, None, True) is None
+
+
+def test_resolve_background_none_when_no_flags():
+    assert _resolve_background(None, None, None, False) is None
+
+
+def test_resolve_background_table_path(tmp_path):
+    table = tmp_path / "bg.tsv"
+    table.write_text("# tier=2\ntaxon_id\trpm\nGCF_x\t1.0\n")
+    model = _resolve_background(None, None, table, False)
+    assert model is not None and model.tier == 2
+
+
+def test_resolve_background_table_beats_ntc(tmp_path):
+    # --background wins over --ntc: the NTC must NOT be classified
+    table = tmp_path / "bg.tsv"
+    table.write_text("# tier=2\ntaxon_id\trpm\nGCF_x\t1.0\n")
+    ntc = tmp_path / "ntc.fastq.gz"
+    ntc.touch()
+    with patch("pathogeniq.cli._classify_taxon_counts",
+               side_effect=AssertionError("should not classify when --background given")):
+        model = _resolve_background(None, ntc, table, False)
+    assert model.tier == 2
+
+
+def test_resolve_background_ntc_builds_tier1(tmp_path):
+    ntc = tmp_path / "ntc.fastq.gz"
+    ntc.touch()
+    with patch("pathogeniq.cli._classify_taxon_counts",
+               return_value=({"GCF_bg": 100}, 1_000_000)):
+        model = _resolve_background(None, ntc, None, False)
+    assert model is not None and model.tier == 1
+    assert "GCF_bg" in model.rates
 
 
 def test_cli_run_invokes_pipeline(tmp_path):

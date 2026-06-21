@@ -40,6 +40,7 @@ class GradingInput:
     ci_width: float
     contaminant_risk: bool
     specimen_type: SpecimenType
+    tier: int = 3   # NTC background tier: 1 batch-matched, 2 pooled, 3 none
 
 
 def _has_invalid_stats(g: GradingInput) -> bool:
@@ -55,17 +56,22 @@ def _has_invalid_stats(g: GradingInput) -> bool:
 
 def grade(g: GradingInput) -> EvidenceGrade:
     """Pure grading rule — the single source of truth for A/B/C/X, shared by
-    ReportEntry.grade and the benchmark adapter."""
+    ReportEntry.grade and the benchmark adapter.
+
+    Grade A requires a batch-matched NTC (tier 1): without one, the highest a
+    finding can reach is B, even with ample reads and a tight CI. This is the
+    tier cap — you cannot claim top confidence without a same-run control.
+    """
     if _has_invalid_stats(g):
         return EvidenceGrade.X
     min_reads = _MIN_READS.get(g.specimen_type, 5)
-    if g.read_count >= min_reads and g.ci_width <= _MAX_CI_WIDTH_A and not g.contaminant_risk:
-        return EvidenceGrade.A
-    if g.read_count >= min_reads and not g.contaminant_risk:
-        return EvidenceGrade.B
-    if g.read_count >= min_reads:
+    if g.read_count < min_reads:
+        return EvidenceGrade.X
+    if g.contaminant_risk:
         return EvidenceGrade.C
-    return EvidenceGrade.X
+    if g.ci_width <= _MAX_CI_WIDTH_A and g.tier == 1:
+        return EvidenceGrade.A
+    return EvidenceGrade.B
 
 
 @dataclass
@@ -78,6 +84,7 @@ class ReportEntry:
     specimen_type: SpecimenType
     contaminant_risk: bool = False
     taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
+    tier: int = 3        # NTC background tier applied to this finding (1/2/3)
 
     def as_input(self) -> GradingInput:
         """Normalize this entry into the struct the grading rule reads."""
@@ -87,6 +94,7 @@ class ReportEntry:
             ci_width=self.ci_upper - self.ci_lower,
             contaminant_risk=self.contaminant_risk,
             specimen_type=self.specimen_type,
+            tier=self.tier,
         )
 
     @property
@@ -144,7 +152,7 @@ def write_report(
         writer = csv.DictWriter(
             f,
             fieldnames=["organism", "taxon_id", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
-                        "read_count", "grade", "contaminant_risk", "invalid_stats"],
+                        "read_count", "grade", "tier", "contaminant_risk", "invalid_stats"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -157,6 +165,7 @@ def write_report(
                 "ci_upper_pct": f"{e.ci_upper * 100:.2f}",
                 "read_count": e.read_count,
                 "grade": e.grade.value,
+                "tier": e.tier,
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
             })
@@ -176,6 +185,7 @@ def write_report(
                 "ci_upper_pct": round(e.ci_upper * 100, 2),
                 "read_count": e.read_count,
                 "grade": e.grade.value,
+                "tier": e.tier,
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
                 "amr_genes": amr_by_org.get(e.organism, []),

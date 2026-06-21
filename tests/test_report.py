@@ -1,5 +1,6 @@
 import json
 import csv
+from dataclasses import replace
 import numpy as np
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 from pathogeniq.em import EMResult
@@ -25,7 +26,14 @@ def _gi(**kw):
 
 
 def test_grade_fn_grade_a():
-    assert grade(_gi()) == EvidenceGrade.A
+    # Grade A requires a batch-matched NTC (tier 1)
+    assert grade(_gi(tier=1)) == EvidenceGrade.A
+
+
+def test_grade_fn_tier_caps_a_to_b():
+    # without a batch-matched NTC, a would-be-A finding caps at B
+    assert grade(_gi(tier=2)) == EvidenceGrade.B
+    assert grade(_gi(tier=3)) == EvidenceGrade.B
 
 
 def test_grade_fn_b_when_ci_wide():
@@ -114,8 +122,11 @@ def test_evidence_grade_blood_high_confidence():
         ci_upper=0.75,
         read_count=700,
         specimen_type=SpecimenType.BLOOD,
+        tier=1,   # batch-matched NTC required for Grade A
     )
     assert entry.grade == EvidenceGrade.A
+    # same finding without a batch-matched NTC caps at B
+    assert replace(entry, tier=3).grade == EvidenceGrade.B
 
 
 def test_evidence_grade_blood_low_reads():
@@ -207,6 +218,7 @@ def test_valid_entry_not_flagged():
         ci_upper=0.75,
         read_count=700,
         specimen_type=SpecimenType.BLOOD,
+        tier=1,
     )
     assert entry.invalid_stats is False
     assert entry.grade == EvidenceGrade.A

@@ -27,7 +27,10 @@ follow-up in todo.md.
 """
 from __future__ import annotations
 
+import csv
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from scipy.stats import nbinom
 
@@ -86,6 +89,38 @@ def build_background(
         dispersion=dispersion,
         tier=tier,
     )
+
+
+def load_background_table(
+    path: Path,
+    *,
+    dispersion: float = _DEFAULT_DISPERSION,
+) -> BackgroundModel:
+    """Load a precomputed pooled background table (the Tier-2 ``--background`` path).
+
+    Format: an optional ``# tier=N`` comment line, then a ``taxon_id<TAB>rpm``
+    header and one row per taxon. Values are final per-taxon background rates in
+    RPM (any pseudocount is already baked in by whoever built the table). Tier
+    defaults to 2 (pooled) when the comment is absent.
+    """
+    tier = 2
+    data_lines: list[str] = []
+    for line in Path(path).read_text().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            m = re.search(r"tier\s*=\s*(\d+)", stripped)
+            if m:
+                tier = int(m.group(1))
+            continue
+        data_lines.append(line)
+    rates: dict[str, float] = {}
+    for row in csv.DictReader(data_lines, delimiter="\t"):
+        taxon_id = (row.get("taxon_id") or "").strip()
+        if taxon_id:
+            rates[taxon_id] = float(row["rpm"])
+    return BackgroundModel(rates=rates, n_controls=0, dispersion=dispersion, tier=tier)
 
 
 def background_pvalue(
