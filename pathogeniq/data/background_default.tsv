@@ -1,16 +1,24 @@
-# PathogenIQ pooled NTC background — Tier 2 default path
 # tier=2
-#
-# Per-taxon reagent/kitome background rates in RPM (pseudocount baked in),
-# pooled from public no-template-control datasets. When this table has data
-# rows, the pipeline uses it by default (Tier 2) so NB background subtraction
-# runs for every user without a batch-matched control.
-#
-# SEED PLACEHOLDER — no data rows yet. Populate by running:
-#   python scripts/build_background_default.py --ntc <ntc1.fq.gz> [<ntc2.fq.gz> ...] \
-#       --db databases/tier1/tier1_pathogens.sbt.zip --host-ref databases/human_ref/GRCh38.fa
-# Suggested source: Salter et al. 2014 reagent-contamination controls (ENA ERP006808).
-#
-# Until populated, load_default_background() returns None and the pipeline
-# falls back to Tier 3 (uncorrected) rather than capping grades with no benefit.
+# PROVENANCE: scripts/05_select_kitome_controls.py from a spiked dilution
+#   series; kept runs with spike fraction <= 0.1 (spike GCF_000006945); pooled from 15 control(s); min_reads=2.
+# CAVEAT: Enterobacteriaceae here (E. coli, Klebsiella, Enterobacter) are
+#   genuine reagent kitome, but the Shigella entries are an E. coli/Shigella
+#   reference cross-mapping artifact (refs >95% identical) and should be
+#   deduplicated (todo.md Plan-3D). This is a foreign, frozen prior from one
+#   2014 study/lab; a per-batch NTC (Tier 1) is stronger. Verified: rates are
+#   stable across spike thresholds, so they are NOT spike cross-mapping.
 taxon_id	rpm
+GCF_000005845.2	26057
+GCF_000006335.3	186961
+GCF_000006765.1	551976
+GCF_000006945.2	8350.78
+GCF_000013145.1	849.757
+GCF_000025565.1	4245.19
+GCF_000240185.1	67699.4
+GCF_000783735.2	17500.5
+GCF_001281065.1	159629
+GCF_002209125.2	1786.21
+GCF_002950395.1	17024.3
+GCF_006094375.1	889.389
+GCF_030291735.1	476.69
+GCF_900636985.1	15686.8
