@@ -25,20 +25,13 @@ from pathlib import Path
 from pathogeniq.benchmark import (
     average_precision,
     kraken_to_grading_inputs,
-    parse_cami_profile,
+    load_truth,
     parse_kraken2_report,
     precision_recall,
 )
 from pathogeniq.config import SpecimenType
 from pathogeniq.crossmap import find_crossmappers
 from pathogeniq.report import EvidenceGrade, grade
-
-
-def load_truth(path: Path) -> set[str]:
-    txt = Path(path).read_text()
-    if txt.lstrip().startswith("@") or "@@TAXID" in txt:   # CAMI profile
-        return parse_cami_profile(txt)
-    return {ln.strip() for ln in txt.splitlines() if ln.strip()}
 
 
 def graded_kept(taxa, specimen, read_floor) -> set[str]:

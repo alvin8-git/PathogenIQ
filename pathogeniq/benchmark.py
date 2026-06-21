@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from .config import SpecimenType
 from .report import GradingInput
@@ -117,6 +118,15 @@ def parse_cami_profile(text: str, *, rank: str = "species", min_pct: float = 0.0
         except ValueError:
             continue
     return truth
+
+
+def load_truth(path: Path) -> set[str]:
+    """Load a truth taxid set: a CAMI gold-standard .profile (auto-detected by its
+    @ header) or a plain one-taxid-per-line file."""
+    txt = Path(path).read_text()
+    if txt.lstrip().startswith("@") or "@@TAXID" in txt:
+        return parse_cami_profile(txt)
+    return {ln.strip() for ln in txt.splitlines() if ln.strip()}
 
 
 def precision_recall(predicted: set[str], truth: set[str]) -> tuple[float, float]:

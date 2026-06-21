@@ -87,8 +87,35 @@ A read floor learned on one run generalizes to the held-out two: precision
 0.651 raw) because aggressive filtering trades ranking-recall for operating-point
 precision; both are reported.
 
-**Scope caveat:** this is one community (Zymo D6300) across runs — it demonstrates
-the held-out methodology and run-to-run generalization, not community diversity.
+## Update — first CROSS-community held-out (Zymo mock -> CAMI mouse gut)
+
+Added a genuinely different community: CAMI II mouse-gut sample_0 (real CAMISIM
+data, per-sample gold standard = 64 species present), classified with Standard-8.
+
+Fixed grading, per community:
+
+| community | raw precision | graded precision | graded recall |
+|---|---|---|---|
+| zymo_r1/2/3 | ~0.009 | ~0.05 | 0.80 |
+| cami_mousegut | 0.006 | 0.015 | 0.53 |
+
+**Cross-community held-out** — read floor calibrated on the 3 Zymo runs, then
+applied to the held-out **mouse-gut** community:
+
+| held-out community | raw precision | graded precision | graded recall |
+|---|---|---|---|
+| cami_mousegut (floor=500 from Zymo) | 0.006 | **0.463** | 0.484 |
+
+A threshold learned on a mock-standard community **generalizes to a completely
+different gut microbiome**: precision 0.006 -> 0.463 (77x), recall 0.484
+(F1 ~0.47). This is the cross-community generalization the held-out PR-AUC was
+for. Caveats: mouse-gut recall is bounded by Standard-8 DB coverage of gut
+anaerobes + taxid-version matching between CAMISIM and the DB; still only 2
+community *types* (marine/strain/HMP would strengthen it).
+
+**Scope caveat:** the Zymo runs alone are one community (D6300) across runs — they
+demonstrate run-to-run generalization; the mouse-gut adds the first true
+cross-community test.
 True multi-community PR-AUC needs CAMI reads (portal-gated at
 data.cami-challenge.org/participate, multi-GB). The harness and the CAMI
 gold-standard truth parser (`parse_cami_profile`, validated on the mouse-gut

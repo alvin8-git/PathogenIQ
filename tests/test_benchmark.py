@@ -27,6 +27,16 @@ def test_parse_cami_profile_species_above_threshold():
     assert parse_cami_profile(CAMI_PROFILE) == {"562", "1280"}
 
 
+def test_load_truth_autodetects_cami_vs_plain(tmp_path):
+    from pathogeniq.benchmark import load_truth
+    cami = tmp_path / "t.profile"
+    cami.write_text(CAMI_PROFILE)
+    assert load_truth(cami) == {"562", "1280"}          # CAMI auto-detected
+    plain = tmp_path / "t.txt"
+    plain.write_text("562\n1280\n9999\n")
+    assert load_truth(plain) == {"562", "1280", "9999"}  # plain taxid list
+
+
 def test_parse_cami_profile_excludes_zero_and_nonspecies():
     truth = parse_cami_profile(CAMI_PROFILE, min_pct=0.0)
     assert "562" in truth and "1280" in truth

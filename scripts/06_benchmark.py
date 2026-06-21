@@ -35,6 +35,7 @@ from pathogeniq.crossmap import find_crossmappers
 from pathogeniq.benchmark import (
     average_precision,
     kraken_to_grading_inputs,
+    load_truth,
     parse_kraken2_report,
     precision_at_recall,
     precision_recall,
@@ -65,7 +66,7 @@ def main() -> None:
     args = ap.parse_args()
 
     taxa = parse_kraken2_report(args.kraken_report.read_text())
-    truth = {ln.strip() for ln in args.truth.read_text().splitlines() if ln.strip()}
+    truth = load_truth(args.truth)   # plain taxid list OR a CAMI .profile (auto-detected)
     specimen = SpecimenType(args.specimen)
     print(f"{len(taxa)} species in report, {len(truth)} in truth set\n")
     print(f"{'config':18s} {'PR-AUC':>7s} {'P@%.0f%%R' % (args.recall * 100):>11s} "
