@@ -87,6 +87,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             ci_upper=float(ci_upper[i]),
             read_count=int(read_counts[i]),
             specimen_type=cfg.specimen_type,
+            taxon_id=align_result.taxon_ids[i],
         )
         for i, name in enumerate(align_result.organism_names)
     ]

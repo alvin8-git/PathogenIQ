@@ -13,13 +13,18 @@ class SketchHit:
     name: str
     containment: float
     genome_path: Path
+    taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
 
 
 _ACCESSION_RE = re.compile(r"(GC[AF]_\d+\.\d+)")
 
 
-def _build_md5_map(db_path: Path) -> dict[str, tuple[str, Path]]:
-    """Return md5 → (species_name, genome_path) built from .sig files beside the SBT zip."""
+def _build_md5_map(db_path: Path) -> dict[str, tuple[str, str, Path]]:
+    """Return md5 → (species_name, taxon_id, genome_path) from .sig files beside the SBT zip.
+
+    taxon_id is the GCF/GCA accession parsed from the sig filename stem; it is the
+    stable join key for NTC background subtraction (display names are not stable).
+    """
     sig_dir = db_path.parent / "sigs"
     genome_dir = db_path.parent / "genomes"
 
@@ -53,8 +58,9 @@ def _build_md5_map(db_path: Path) -> dict[str, tuple[str, Path]]:
                                     genome = found[0]
                                     break
                     m = _ACCESSION_RE.search(stem)
-                    name = name_map.get(m.group(1), stem) if m else stem
-                    md5_map[md5] = (name, genome)
+                    taxon_id = m.group(1) if m else ""
+                    name = name_map.get(taxon_id, stem) if m else stem
+                    md5_map[md5] = (name, taxon_id, genome)
         except Exception:
             continue
     return md5_map
@@ -101,15 +107,18 @@ def run_sketch_screen(cfg: PipelineConfig, nonhuman_fastq: Path) -> list[SketchH
                     continue
                 md5 = row.get("md5", "")
                 if md5 and md5 in md5_map:
-                    name, genome_path = md5_map[md5]
+                    name, taxon_id, genome_path = md5_map[md5]
                 else:
                     # fallback: use CSV values as-is (e.g. pre-named signatures)
                     name = row.get("name", "")
                     genome_path = Path(row.get("filename", ""))
+                    m_acc = _ACCESSION_RE.search(name)
+                    taxon_id = m_acc.group(1) if m_acc else ""
                 hits.append(SketchHit(
                     name=name,
                     containment=containment,
                     genome_path=genome_path,
+                    taxon_id=taxon_id,
                 ))
     except FileNotFoundError:
         pass

@@ -56,6 +56,7 @@ def test_cli_run_invokes_pipeline(tmp_path):
         mock_align.return_value = AlignmentResult(
             alignment_matrix=np.array([[1.0]]),
             organism_names=["org1"],
+            taxon_ids=["GCF_000005845.2"],
             read_ids=["r1"],
         )
         mock_em.return_value = em_result
@@ -92,6 +93,7 @@ def test_cli_run_produces_pdf(tmp_path):
         alignment_matrix=np.ones((10, 1)),
         organism_names=["Staphylococcus aureus"],
         read_ids=["r1"],
+        taxon_ids=["GCF_000005845.2"],
     )
 
     runner = CliRunner()
@@ -138,6 +140,7 @@ def test_cli_run_no_pdf_flag(tmp_path):
         alignment_matrix=np.ones((10, 1)),
         organism_names=["Staphylococcus aureus"],
         read_ids=["r1"],
+        taxon_ids=["GCF_000005845.2"],
     )
 
     runner = CliRunner()

@@ -13,6 +13,7 @@ class AlignmentResult:
     alignment_matrix: np.ndarray   # shape (n_reads, n_organisms)
     organism_names: list[str]
     read_ids: list[str]
+    taxon_ids: list[str]           # parallel to organism_names; stable join key for NTC background
 
 
 def run_targeted_alignment(
@@ -62,6 +63,7 @@ def run_targeted_alignment(
         alignment_matrix=matrix,
         organism_names=[h.name for h in hits],
         read_ids=all_read_ids,
+        taxon_ids=[h.taxon_id for h in hits],
     )
 
 

@@ -112,6 +112,33 @@ def test_report_json_includes_contaminant_risk(tmp_path):
     assert findings["Escherichia coli"]["contaminant_risk"] is False
 
 
+def test_report_includes_taxon_id(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    entries = [
+        ReportEntry(
+            organism="Escherichia coli",
+            abundance=0.70,
+            ci_lower=0.65,
+            ci_upper=0.75,
+            read_count=700,
+            specimen_type=SpecimenType.BLOOD,
+            taxon_id="GCF_000005845.2",
+        ),
+    ]
+    write_report(
+        cfg, ["Escherichia coli"], em,
+        np.array([0.65]), np.array([0.75]),
+        entries_override=entries,
+    )
+    with open(tmp_path / "report" / "pathogeniq_report.json") as f:
+        data = json.load(f)
+    assert data["findings"][0]["taxon_id"] == "GCF_000005845.2"
+    with open(tmp_path / "report" / "pathogeniq_report.tsv") as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+    assert rows[0]["taxon_id"] == "GCF_000005845.2"
+
+
 def test_report_tsv_includes_contaminant_risk(tmp_path):
     cfg = _cfg(tmp_path)
     em = _em_result()

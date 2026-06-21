@@ -1,8 +1,14 @@
 # PathogenIQ TODO — Next Session
 
-## Critical Bug: Pipeline Produces Broken Output
+## Critical Bug: Pipeline Produces Broken Output  — RESOLVED (verified 2026-06-21)
 
-**Status:** Root cause identified, fix not yet implemented.
+**Status:** FIXED in commits 8c77b68 (resolve names from GCF accessions) and
+4906f09 (genome path resolution). `sketch.py::_build_md5_map` now maps md5 →
+(name, taxon_id, genome) from the `.sig` files + `name_map.json`, and the DB is
+built (`databases/tier1/` with sigs/ + name_map.json). The original symptom
+below is historical. T1 of Plan 4 then added taxon_id threading on top.
+
+**Original report (historical):**
 
 **Problem:** Running the full pipeline on Zymo data produces reports with:
 - Empty organism names
@@ -132,3 +138,25 @@ flag the minor one as `contaminant_risk=True` with note "Likely cross-mapping fr
 
 **Scope:** Only needed for a handful of known problematic pairs — hardcode a `KNOWN_CROSSMAPPERS`
 dict initially rather than computing ANI at runtime.
+
+---
+
+## Plan 4 — NTC-Aware Grading (from eng review 2026-06-21)
+
+See design doc `~/.gstack/projects/alvin8-git-PathogenIQ/alvin-master-design-20260621-100903.md`
+for the full plan and GSTACK REVIEW REPORT.
+
+### 4-FollowUp — Validate the single-NTC NB dispersion prior
+
+**What:** Quantify how the single-NTC negative-binomial background test's false-positive
+rate varies with the chosen dispersion prior, and pick a defensible default.
+
+**Why:** With one NTC, per-taxon dispersion is not estimable and the test leans on a shared
+prior. That prior is the weakest link in the method's FPR claim — if FPR is highly sensitive
+to it, the single-NTC (Tier 2) path's controlled-α guarantee is hollow.
+
+**Depends on:** the multi-community truth set (the P1 data-acquisition task for the benchmark).
+Cannot run until labeled data exists.
+
+**Where to start:** sweep the dispersion prior over a plausible range, measure FPR at fixed α
+on the held-out split, report sensitivity.

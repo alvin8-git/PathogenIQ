@@ -59,6 +59,27 @@ def test_sketch_screen_calls_sourmash(tmp_path):
     assert any(c[0] == "sourmash" for c in calls)
 
 
+def test_sketch_screen_populates_taxon_id(tmp_path):
+    # taxon_id (GCF accession) is parsed from the CSV name even on the fallback path
+    cfg = _cfg(tmp_path)
+    nonhuman = tmp_path / "nonhuman.fastq.gz"
+    with patch("subprocess.run"), \
+         patch("builtins.open", mock_open(read_data=SOURMASH_CSV)):
+        hits = run_sketch_screen(cfg, nonhuman)
+    taxon_ids = [h.taxon_id for h in hits]
+    assert "GCF_000001405.40" in taxon_ids
+    assert all(t.startswith("GCF_") for t in taxon_ids)
+
+
+def test_sketch_screen_taxon_id_empty_without_accession(tmp_path):
+    cfg = _cfg(tmp_path)
+    csv_no_acc = "name,containment,similarity,filename\nsomeorg,0.5,0.4,someorg.fna\n"
+    with patch("subprocess.run"), \
+         patch("builtins.open", mock_open(read_data=csv_no_acc)):
+        hits = run_sketch_screen(cfg, tmp_path / "n.fastq.gz")
+    assert hits[0].taxon_id == ""
+
+
 def test_sketch_screen_creates_output_dir(tmp_path):
     cfg = _cfg(tmp_path)
     nonhuman = tmp_path / "nonhuman.fastq.gz"

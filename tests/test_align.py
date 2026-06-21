@@ -18,8 +18,8 @@ def _cfg(tmp_path):
 
 def _hits(tmp_path):
     return [
-        SketchHit("ecoli", 0.35, tmp_path / "ecoli.fa"),
-        SketchHit("staph", 0.12, tmp_path / "staph.fa"),
+        SketchHit("ecoli", 0.35, tmp_path / "ecoli.fa", "GCF_000005845.2"),
+        SketchHit("staph", 0.12, tmp_path / "staph.fa", "GCF_000007545.1"),
     ]
 
 
@@ -50,6 +50,18 @@ def test_targeted_alignment_result_shape(tmp_path):
         result = run_targeted_alignment(cfg, nonhuman, hits)
     assert result.alignment_matrix.shape[1] == len(hits)
     assert result.organism_names == ["ecoli", "staph"]
+
+
+def test_targeted_alignment_carries_taxon_ids(tmp_path):
+    cfg = _cfg(tmp_path)
+    nonhuman = tmp_path / "nonhuman.fastq.gz"
+    hits = _hits(tmp_path)
+    with patch("subprocess.run"), \
+         patch("pathogeniq.align._parse_paf", return_value=set()):
+        result = run_targeted_alignment(cfg, nonhuman, hits)
+    # taxon_ids must stay parallel to organism_names (the NTC background join key)
+    assert result.taxon_ids == ["GCF_000005845.2", "GCF_000007545.1"]
+    assert len(result.taxon_ids) == len(result.organism_names)
 
 
 def test_targeted_alignment_result_fields(tmp_path):

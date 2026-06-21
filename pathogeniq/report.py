@@ -37,6 +37,7 @@ class ReportEntry:
     read_count: int
     specimen_type: SpecimenType
     contaminant_risk: bool = False
+    taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
 
     @property
     def grade(self) -> EvidenceGrade:
@@ -94,7 +95,7 @@ def write_report(
     with open(tsv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["organism", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
+            fieldnames=["organism", "taxon_id", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
                         "read_count", "grade", "contaminant_risk"],
             delimiter="\t",
         )
@@ -102,6 +103,7 @@ def write_report(
         for e in entries:
             writer.writerow({
                 "organism": e.organism,
+                "taxon_id": e.taxon_id,
                 "abundance_pct": f"{e.abundance * 100:.2f}",
                 "ci_lower_pct": f"{e.ci_lower * 100:.2f}",
                 "ci_upper_pct": f"{e.ci_upper * 100:.2f}",
@@ -119,6 +121,7 @@ def write_report(
         "findings": [
             {
                 "organism": e.organism,
+                "taxon_id": e.taxon_id,
                 "abundance_pct": round(e.abundance * 100, 2),
                 "ci_lower_pct": round(e.ci_lower * 100, 2),
                 "ci_upper_pct": round(e.ci_upper * 100, 2),
