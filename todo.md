@@ -259,11 +259,14 @@ content captured below.
 - Cross-mapping dedup (`crossmap.py`).
 
 **NEW ideas worth pursuing (gaps the air design highlights):**
-1. **Coverage breadth of coverage** — the biggest gap. We grade on read COUNT, not
-   genome breadth/evenness; the benchmark's FP tail is exactly where breadth would
-   help (artifact spikes at one locus vs. genome-wide signal). Add a minimap2
-   verification module that reports breadth + horizontal distribution for flagged
-   taxa, and fold it into grading.
+1. **Coverage breadth** — EXPLORED 2026-06-21 (`pathogeniq/coverage.py`,
+   `docs/coverage-exploration-2026-06-21.md`). Built + tested. Finding: breadth_ratio
+   (Lander-Waterman normalized) catches CLUMPED artifacts (PCR dupes, low-complexity,
+   partial/distant cross-mapping — the air "one B. anthracis locus" case) but does
+   NOT solve near-identical cross-mapping (E. coli/Shigella both ~75-92% covered,
+   genomes >95% identical). To integrate: a verification gate on flagged taxa
+   (align.py already has the PAF; it discards the positions). NOT the E. coli/Shigella
+   fix — that stays with EM/LCA + the crossmap dedup.
 2. **Kaiju** (protein-level, six-frame) as a complementary classifier for divergent/
    novel viruses that nucleotide k-mers miss — relevant for air viral surveillance.
 3. **Air-specific contaminant priors** — Cutibacterium, Ralstonia, Pseudomonas kit
