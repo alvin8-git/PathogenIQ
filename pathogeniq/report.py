@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,7 +41,22 @@ class ReportEntry:
     taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
 
     @property
+    def invalid_stats(self) -> bool:
+        """True if upstream values are degenerate and not gradeable: a NaN/inf
+        abundance or CI bound, or a negative read count (INT64_MIN underflow from
+        `astype(int)` on a NaN abundance). Surfaced in the report so a degenerate
+        finding is visibly flagged rather than silently scored Grade X."""
+        return (
+            self.read_count < 0
+            or not math.isfinite(self.abundance)
+            or not math.isfinite(self.ci_lower)
+            or not math.isfinite(self.ci_upper)
+        )
+
+    @property
     def grade(self) -> EvidenceGrade:
+        if self.invalid_stats:
+            return EvidenceGrade.X
         min_reads = _MIN_READS.get(self.specimen_type, 5)
         ci_width = self.ci_upper - self.ci_lower
         if self.read_count >= min_reads and ci_width <= _MAX_CI_WIDTH_A and not self.contaminant_risk:
@@ -96,7 +112,7 @@ def write_report(
         writer = csv.DictWriter(
             f,
             fieldnames=["organism", "taxon_id", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
-                        "read_count", "grade", "contaminant_risk"],
+                        "read_count", "grade", "contaminant_risk", "invalid_stats"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -110,6 +126,7 @@ def write_report(
                 "read_count": e.read_count,
                 "grade": e.grade.value,
                 "contaminant_risk": e.contaminant_risk,
+                "invalid_stats": e.invalid_stats,
             })
 
     json_path = out / "pathogeniq_report.json"
@@ -128,6 +145,7 @@ def write_report(
                 "read_count": e.read_count,
                 "grade": e.grade.value,
                 "contaminant_risk": e.contaminant_risk,
+                "invalid_stats": e.invalid_stats,
                 "amr_genes": amr_by_org.get(e.organism, []),
             }
             for e in entries

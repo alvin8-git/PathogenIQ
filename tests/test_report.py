@@ -112,6 +112,78 @@ def test_report_json_includes_contaminant_risk(tmp_path):
     assert findings["Escherichia coli"]["contaminant_risk"] is False
 
 
+def test_grade_x_on_nan_ci():
+    # CRITICAL regression: NaN CI bounds (degenerate EM output) must not grade A/B/C
+    entry = ReportEntry(
+        organism="Escherichia coli",
+        abundance=0.70,
+        ci_lower=float("nan"),
+        ci_upper=float("nan"),
+        read_count=700,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.invalid_stats is True
+    assert entry.grade == EvidenceGrade.X
+
+
+def test_grade_x_on_int64min_read_count():
+    # CRITICAL regression: NaN abundance -> astype(int) underflows to INT64_MIN.
+    # A negative read count is impossible and must be flagged, not graded.
+    with np.errstate(invalid="ignore"):   # the cast IS the bug we're reproducing
+        int64min = int(np.array([np.nan]).astype(int)[0])
+    assert int64min < 0
+    entry = ReportEntry(
+        organism="Klebsiella pneumoniae",
+        abundance=float("nan"),
+        ci_lower=0.0,
+        ci_upper=0.0,
+        read_count=int64min,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.invalid_stats is True
+    assert entry.grade == EvidenceGrade.X
+
+
+def test_valid_entry_not_flagged():
+    # Regression guard: the NaN check must not trip on healthy values
+    entry = ReportEntry(
+        organism="Escherichia coli",
+        abundance=0.70,
+        ci_lower=0.65,
+        ci_upper=0.75,
+        read_count=700,
+        specimen_type=SpecimenType.BLOOD,
+    )
+    assert entry.invalid_stats is False
+    assert entry.grade == EvidenceGrade.A
+
+
+def test_report_flags_invalid_stats(tmp_path):
+    cfg = _cfg(tmp_path)
+    em = _em_result()
+    with np.errstate(invalid="ignore"):   # the cast IS the bug we're reproducing
+        bad_count = int(np.array([np.nan]).astype(int)[0])
+    entries = [
+        ReportEntry(
+            organism="Degenerate org",
+            abundance=float("nan"),
+            ci_lower=float("nan"),
+            ci_upper=float("nan"),
+            read_count=bad_count,
+            specimen_type=SpecimenType.BLOOD,
+        ),
+    ]
+    write_report(
+        cfg, ["Degenerate org"], em,
+        np.array([0.0]), np.array([0.0]),
+        entries_override=entries,
+    )
+    with open(tmp_path / "report" / "pathogeniq_report.json") as f:
+        finding = json.load(f)["findings"][0]
+    assert finding["invalid_stats"] is True
+    assert finding["grade"] == "X"
+
+
 def test_report_includes_taxon_id(tmp_path):
     cfg = _cfg(tmp_path)
     em = _em_result()
