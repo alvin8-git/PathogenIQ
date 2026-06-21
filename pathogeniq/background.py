@@ -44,6 +44,9 @@ _DEFAULT_DISPERSION = 2.0
 # Controlled false-positive rate: a taxon with tail p >= ALPHA is treated as
 # indistinguishable from background.
 _DEFAULT_ALPHA = 0.01
+# Minimum summed read support for a taxon to enter the background. Singletons in
+# a low-biomass blank are noise (1 read => a huge RPM floor), not kitome.
+_DEFAULT_MIN_READS = 2
 
 
 @dataclass(frozen=True)
@@ -64,12 +67,19 @@ def build_background(
     tier: int,
     dispersion: float = _DEFAULT_DISPERSION,
     pseudocount_rpm: float = _PSEUDOCOUNT_RPM,
+    min_reads: int = _DEFAULT_MIN_READS,
 ) -> BackgroundModel | None:
     """Build a background model from one or more NTC samples.
 
     ``ntc_counts`` is a list of ``(per-taxon counts keyed by taxon_id, total
     classified reads)``. The per-taxon background rate is the mean RPM across
     usable controls plus the pseudocount.
+
+    ``min_reads`` drops taxa whose summed support across controls is below the
+    threshold. In a low-biomass blank a single spurious read inflates to a huge
+    RPM (1 read in a 157-read blank = ~6400 RPM), which would otherwise set a
+    background floor that suppresses genuine low-level pathogens. Singletons are
+    noise, not kitome.
 
     Returns ``None`` when no control has any classified reads (the mandatory
     zero-NTC-reads edge case) — the caller must then grade uncorrected and flag
@@ -81,8 +91,13 @@ def build_background(
     taxa: set[str] = set().union(*(set(counts) for counts, _ in usable))
     rates: dict[str, float] = {}
     for tx in taxa:
+        support = sum(counts.get(tx, 0) for counts, _ in usable)
+        if support < min_reads:
+            continue   # below support floor -> noise, not background
         per_ntc = [_rpm(counts.get(tx, 0), total) for counts, total in usable]
         rates[tx] = sum(per_ntc) / len(per_ntc) + pseudocount_rpm
+    if not rates:
+        return None
     return BackgroundModel(
         rates=rates,
         n_controls=len(usable),

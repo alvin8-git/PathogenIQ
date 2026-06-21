@@ -41,6 +41,8 @@ def main() -> None:
     ap.add_argument("--host-ref", required=True, help="host reference (indexed)")
     ap.add_argument("--read-type", choices=[r.value for r in ReadType], default="short")
     ap.add_argument("--threads", type=int, default=8)
+    ap.add_argument("--min-reads", type=int, default=2,
+                    help="drop background taxa with fewer summed reads (singletons are noise)")
     ap.add_argument("--out", default=None, help="output table (default: packaged path)")
     ap.add_argument("--workdir", default="/data/alvin/tmp/bg_build",
                     help="scratch dir for intermediate classification outputs")
@@ -61,9 +63,9 @@ def main() -> None:
         print(f"{fq}: {len(counts)} taxa, {total} classified reads")
         ntc_counts.append((counts, total))
 
-    model = build_background(ntc_counts, tier=2)
+    model = build_background(ntc_counts, tier=2, min_reads=args.min_reads)
     if model is None:
-        raise SystemExit("No NTC produced classified reads — nothing to pool.")
+        raise SystemExit("No NTC produced classified reads above the support floor.")
 
     out = Path(args.out) if args.out else default_background_path()
     write_background_table(out, model.rates, tier=2)

@@ -32,8 +32,10 @@ def test_resolve_background_no_background_returns_none():
     assert _resolve_background(None, None, None, True) is None
 
 
-def test_resolve_background_none_when_no_flags():
-    # no flags + empty packaged default placeholder -> Tier 3 (None)
+def test_resolve_background_none_when_no_flags(monkeypatch):
+    # no flags + no curated default -> Tier 3 (None). Monkeypatched so the test
+    # does not depend on whether the shipped default table is populated.
+    monkeypatch.setattr("pathogeniq.cli.load_default_background", lambda: None)
     assert _resolve_background(None, None, None, False) is None
 
 

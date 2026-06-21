@@ -18,8 +18,12 @@ def test_write_then_load_background_table_roundtrip(tmp_path):
     assert abs(model.rates["GCF_b"] - 2.5) < 1e-6
 
 
-def test_load_default_background_none_for_empty_placeholder():
-    # the shipped table is a header-only placeholder until curated
+def test_load_default_background_none_for_empty_table(tmp_path, monkeypatch):
+    # an empty (header-only) default table -> None, so the caller stays Tier 3.
+    # Monkeypatched so the test does not depend on the shipped file's contents.
+    empty = tmp_path / "bg.tsv"
+    empty.write_text("# tier=2\ntaxon_id\trpm\n")
+    monkeypatch.setattr("pathogeniq.background.default_background_path", lambda: empty)
     assert load_default_background() is None
 
 
@@ -78,6 +82,20 @@ def test_build_background_normalizes_by_depth():
     shallow = build_background([({"GCF_x": 10}, 100_000)], tier=2)   # 100 RPM
     deep = build_background([({"GCF_x": 10}, 10_000_000)], tier=2)   # 1 RPM
     assert shallow.rates["GCF_x"] > deep.rates["GCF_x"]
+
+
+def test_build_background_drops_low_support_taxa():
+    # singletons in a thin blank are noise; min_reads filters them out
+    counts = {"GCF_kitome": 150, "GCF_singleton": 1, "GCF_pair": 2}
+    model = build_background([(counts, 157)], tier=2, min_reads=2)
+    assert "GCF_kitome" in model.rates
+    assert "GCF_pair" in model.rates
+    assert "GCF_singleton" not in model.rates   # 1 read < min_reads
+
+
+def test_build_background_none_when_all_below_min_reads():
+    # every taxon is a singleton -> nothing survives -> None (caller flags Tier 3)
+    assert build_background([({"GCF_x": 1, "GCF_y": 1}, 100)], tier=2, min_reads=2) is None
 
 
 def test_build_background_none_when_all_controls_empty():
