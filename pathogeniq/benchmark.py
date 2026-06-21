@@ -94,17 +94,31 @@ def kraken_to_grading_inputs(
     return out
 
 
-def parse_cami_profile(text: str, *, rank: str = "species", min_pct: float = 0.0) -> set[str]:
+def parse_cami_profile(
+    text: str,
+    *,
+    rank: str = "species",
+    min_pct: float = 0.0,
+    sample_id: str | None = None,
+) -> set[str]:
     """Parse a CAMI gold-standard profile into a truth set of taxids at ``rank``.
 
     CAMI profile rows (after the ``@@TAXID...`` header) are tab-separated:
-    TAXID, RANK, TAXPATH, TAXPATHSN, PERCENTAGE. ``@``/``#`` lines are headers.
-    Keeps taxa at the given rank with abundance above ``min_pct``.
+    TAXID, RANK, TAXPATH, TAXPATHSN, PERCENTAGE. A file may hold many samples,
+    each a ``@SampleID:...`` block; pass ``sample_id`` (exact match) to score one
+    sample, or None to pool all (the union). Keeps taxa at ``rank`` above
+    ``min_pct``.
     """
     truth: set[str] = set()
+    in_scope = sample_id is None
     for line in text.splitlines():
         s = line.strip()
-        if not s or s.startswith("@") or s.startswith("#"):
+        if not s:
+            continue
+        if s.startswith("@SampleID:"):
+            in_scope = sample_id is None or s.split(":", 1)[1].strip() == sample_id
+            continue
+        if s.startswith("@") or s.startswith("#") or not in_scope:
             continue
         cols = s.split("\t")
         if len(cols) < 5:

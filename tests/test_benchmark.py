@@ -44,6 +44,20 @@ def test_parse_cami_profile_excludes_zero_and_nonspecies():
     assert "9999" not in truth     # 0.0% is not above min_pct
 
 
+_MULTI_SAMPLE = (
+    "@SampleID:s0\n@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE\n"
+    "562\tspecies\t.\t.\t50.0\n"
+    "@SampleID:s1\n@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE\n"
+    "1280\tspecies\t.\t.\t30.0\n"
+)
+
+
+def test_parse_cami_profile_per_sample_selection():
+    assert parse_cami_profile(_MULTI_SAMPLE, sample_id="s0") == {"562"}   # only s0's block
+    assert parse_cami_profile(_MULTI_SAMPLE, sample_id="s1") == {"1280"}
+    assert parse_cami_profile(_MULTI_SAMPLE) == {"562", "1280"}           # None pools both
+
+
 # Kraken2 report: percent, clade_reads, taxon_reads, rank, taxid, name (indented)
 KRAKEN = (
     "50.00\t5000\t5000\tU\t0\tunclassified\n"
