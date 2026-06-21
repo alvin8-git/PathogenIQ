@@ -93,6 +93,32 @@ def kraken_to_grading_inputs(
     return out
 
 
+def parse_cami_profile(text: str, *, rank: str = "species", min_pct: float = 0.0) -> set[str]:
+    """Parse a CAMI gold-standard profile into a truth set of taxids at ``rank``.
+
+    CAMI profile rows (after the ``@@TAXID...`` header) are tab-separated:
+    TAXID, RANK, TAXPATH, TAXPATHSN, PERCENTAGE. ``@``/``#`` lines are headers.
+    Keeps taxa at the given rank with abundance above ``min_pct``.
+    """
+    truth: set[str] = set()
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("@") or s.startswith("#"):
+            continue
+        cols = s.split("\t")
+        if len(cols) < 5:
+            continue
+        taxid, row_rank, pct = cols[0].strip(), cols[1].strip(), cols[4].strip()
+        if row_rank != rank:
+            continue
+        try:
+            if float(pct) > min_pct:
+                truth.add(taxid)
+        except ValueError:
+            continue
+    return truth
+
+
 def precision_recall(predicted: set[str], truth: set[str]) -> tuple[float, float]:
     """Precision and recall of a predicted-present set against the truth set."""
     tp = len(predicted & truth)

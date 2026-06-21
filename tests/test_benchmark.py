@@ -2,11 +2,36 @@ from pathogeniq.config import SpecimenType
 from pathogeniq.report import grade, EvidenceGrade
 from pathogeniq.benchmark import (
     parse_kraken2_report,
+    parse_cami_profile,
     kraken_to_grading_inputs,
     precision_recall,
     average_precision,
     precision_at_recall,
 )
+
+
+CAMI_PROFILE = (
+    "@SampleID:toy\n"
+    "@Version:0.9.1\n"
+    "@Ranks:superkingdom|phylum|class|order|family|genus|species\n"
+    "@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE\n"
+    "2\tsuperkingdom\t2\tBacteria\t100.0\n"
+    "562\tspecies\t2|...|562\tBacteria|...|Escherichia coli\t40.0\n"
+    "1280\tspecies\t2|...|1280\tBacteria|...|Staphylococcus aureus\t10.0\n"
+    "9999\tspecies\t2|...|9999\tBacteria|...|Trace species\t0.0\n"
+)
+
+
+def test_parse_cami_profile_species_above_threshold():
+    # only species rows with PERCENTAGE > 0 (9999 is exactly 0.0 -> excluded)
+    assert parse_cami_profile(CAMI_PROFILE) == {"562", "1280"}
+
+
+def test_parse_cami_profile_excludes_zero_and_nonspecies():
+    truth = parse_cami_profile(CAMI_PROFILE, min_pct=0.0)
+    assert "562" in truth and "1280" in truth
+    assert "2" not in truth        # superkingdom, not species
+    assert "9999" not in truth     # 0.0% is not above min_pct
 
 
 # Kraken2 report: percent, clade_reads, taxon_reads, rank, taxid, name (indented)
