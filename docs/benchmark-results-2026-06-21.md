@@ -121,3 +121,31 @@ data.cami-challenge.org/participate, multi-GB). The harness and the CAMI
 gold-standard truth parser (`parse_cami_profile`, validated on the mouse-gut
 profile -> 549 species) are built and tested, so CAMI communities slot straight
 in once their reads are classified to a .kreport.
+
+## Update — multi-community held-out across 3 CAMI environments
+
+Added two more CAMI II communities (freely downloaded from frl.publisso.de),
+per-sample gold standards via `parse_cami_profile(sample_id=...)`:
+marine sample_0 (259 species) and strain-madness sample_0 (20 species, the
+near-identical-strain stress case). All classified with Standard-8.
+
+Read floor calibrated on the 3 Zymo runs (F1, floor=500), then applied to the 3
+held-out CAMI communities — none seen during calibration:
+
+| held-out community | raw P | graded P | graded R | lift |
+|---|---|---|---|---|
+| cami_mousegut | 0.006 | 0.463 | 0.484 | 77x |
+| cami_marine | 0.023 | 0.692 | 0.869 | 30x |
+| cami_strain | 0.003 | 0.326 | 0.700 | 109x |
+| **MEAN (held-out)** | **0.011** | **0.494** | **0.684** | **45x** |
+
+A single floor learned on a mock standard generalizes across three structurally
+different communities (gut anaerobes, marine, high-strain) — **mean precision
+0.011 -> 0.494 (45x) at recall 0.684**. The strongest evidence yet that the
+grading wedge is community-agnostic, not Zymo-overfit.
+
+**Strain-madness is the weakest graded precision (0.326)** — exactly as
+predicted: many near-identical strains drive cross-mapping FPs that a read floor
+alone can't fully resolve (the case Plan-3D dedup targets). Even so it's a 109x
+lift. Graded PR-AUC tracks raw (the filtering trades ranking-recall for
+operating-point precision, as before); the precision lift is the headline.
