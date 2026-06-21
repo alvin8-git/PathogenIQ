@@ -10,6 +10,7 @@ import numpy as np
 from .background import BackgroundModel, is_background
 from .config import PipelineConfig, SpecimenType
 from .contaminants import flag_contaminants
+from .crossmap import deduplicate_closely_related
 from .em import EMResult
 
 
@@ -41,7 +42,8 @@ class GradingInput:
     ci_width: float
     contaminant_risk: bool
     specimen_type: SpecimenType
-    tier: int = 3   # NTC background tier: 1 batch-matched, 2 pooled, 3 none
+    tier: int = 3       # NTC background tier: 1 batch-matched, 2 pooled, 3 none
+    crossmap: bool = False   # likely a cross-mapping artifact of a dominant relative
 
 
 def _has_invalid_stats(g: GradingInput) -> bool:
@@ -65,6 +67,8 @@ def grade(g: GradingInput) -> EvidenceGrade:
     """
     if _has_invalid_stats(g):
         return EvidenceGrade.X
+    if g.crossmap:
+        return EvidenceGrade.X   # cross-mapping artifact of a dominant relative
     min_reads = _MIN_READS.get(g.specimen_type, 5)
     if g.read_count < min_reads:
         return EvidenceGrade.X
@@ -84,8 +88,9 @@ class ReportEntry:
     read_count: int
     specimen_type: SpecimenType
     contaminant_risk: bool = False
-    taxon_id: str = ""   # stable GCF/GCA accession; join key for NTC background
-    tier: int = 3        # NTC background tier applied to this finding (1/2/3)
+    taxon_id: str = ""    # stable GCF/GCA accession; join key for NTC background
+    tier: int = 3         # NTC background tier applied to this finding (1/2/3)
+    crossmap_of: str = ""  # dominant relative this is likely cross-mapping from
 
     def as_input(self) -> GradingInput:
         """Normalize this entry into the struct the grading rule reads."""
@@ -96,6 +101,7 @@ class ReportEntry:
             contaminant_risk=self.contaminant_risk,
             specimen_type=self.specimen_type,
             tier=self.tier,
+            crossmap=bool(self.crossmap_of),
         )
 
     @property
@@ -143,6 +149,9 @@ def build_entries(
         )
         for i, name in enumerate(organism_names)
     ]
+    # Plan-3D: flag cross-mapping artifacts (e.g. Shigella from a dominant E. coli)
+    # so grade() drops them as X.
+    entries = deduplicate_closely_related(entries)
     # CQ3: a batch-matched NTC (Tier 1) supersedes the static contaminant
     # blocklist; the blocklist still applies at Tier 2/3.
     if tier != 1:
@@ -181,7 +190,8 @@ def write_report(
         writer = csv.DictWriter(
             f,
             fieldnames=["organism", "taxon_id", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
-                        "read_count", "grade", "tier", "contaminant_risk", "invalid_stats"],
+                        "read_count", "grade", "tier", "contaminant_risk", "invalid_stats",
+                        "crossmap_of"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -197,6 +207,7 @@ def write_report(
                 "tier": e.tier,
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
+                "crossmap_of": e.crossmap_of,
             })
 
     json_path = out / "pathogeniq_report.json"
@@ -217,6 +228,7 @@ def write_report(
                 "tier": e.tier,
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
+                "crossmap_of": e.crossmap_of,
                 "amr_genes": amr_by_org.get(e.organism, []),
             }
             for e in entries

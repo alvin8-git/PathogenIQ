@@ -31,6 +31,7 @@ import argparse
 from pathlib import Path
 
 from pathogeniq.background import is_background, load_background_table
+from pathogeniq.crossmap import find_crossmappers
 from pathogeniq.benchmark import (
     average_precision,
     kraken_to_grading_inputs,
@@ -81,8 +82,11 @@ def main() -> None:
     tier = bg.tier if bg is not None else args.tier
     total = sum(t.reads for t in taxa)
     gi = kraken_to_grading_inputs(taxa, specimen=specimen, tier=tier)
+    crossmap = find_crossmappers([(t.taxid, t.name, t.reads) for t in taxa])
     kept = set()
     for t in taxa:
+        if t.taxid in crossmap:
+            continue   # cross-mapping artifact of a dominant relative -> drop
         if bg is not None and is_background(t.taxid, t.reads, total, bg):
             continue   # indistinguishable from NTC background -> drop
         if grade(gi[t.taxid]) != EvidenceGrade.X:
