@@ -146,6 +146,34 @@ dict initially rather than computing ANI at runtime.
 See design doc `~/.gstack/projects/alvin8-git-PathogenIQ/alvin-master-design-20260621-100903.md`
 for the full plan and GSTACK REVIEW REPORT.
 
+**Method code: COMPLETE** (T1-T7 + T3, committed). taxon_id join key → NB
+background model → tier-capped grading → consolidated renderers → Tier-2
+default mechanism + curation recipe. 111 unit tests pass.
+
+### 4-BLOCKER — Tier-2 default needs MORE blank datasets (do NOT ship one blank)
+
+**What:** Build `pathogeniq/data/background_default.tsv` from a pool of several
+real no-template / water-blank datasets, not a single control. Keep the shipped
+file an empty placeholder until this is done.
+
+**Why (learned 2026-06-21):** the obvious move — pool ENA project ERP006808 — is
+WRONG twice over:
+- ERP006808 is the Salter *S. bongori* serial-dilution experiment, not blanks.
+  Pooling all 33 runs made a "background" dominated by the *Salmonella* spike
+  (43% RPM), which would suppress real Enterobacteriaceae. Only `ERR588954`
+  ("Water") is a true negative control.
+- That one water blank has just 157 classified reads → *Pseudomonas* at 98%
+  (real kitome but over-aggressive from one blank) and single-read detections of
+  serious pathogens (*Rickettsia*, *Ehrlichia*) that became spurious background
+  floors. The `min_reads` floor (now in build_background, default 2) removes the
+  singletons, but one thin blank still can't anchor a credible default.
+
+**Where to start:** download additional reagent/kitome blank datasets (other
+kitome studies; more water/NTC controls), run them through
+`scripts/build_background_default.py --ntc <blanks...> --min-reads 2`, and only
+then commit a populated `background_default.tsv`. Until then the default stays
+Tier 3 (uncorrected), which is correct.
+
 ### 4-FollowUp — Validate the single-NTC NB dispersion prior
 
 **What:** Quantify how the single-NTC negative-binomial background test's false-positive
