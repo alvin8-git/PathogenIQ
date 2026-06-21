@@ -232,15 +232,43 @@ on the held-out split, report sensitivity.
 
 ## Future Exploration
 
-### Air-sample metagenomics — TO EXPLORE LATER
+### Air-sample / bioaerosol surveillance — TO EXPLORE LATER
 
-**What:** Apply / adapt the pipeline to metagenomics from **air samples**.
+**What:** Adapt the pipeline to bioaerosol/air-sample surveillance. Air is even
+lower-biomass + more kitome-contaminated than clinical specimens, so the NTC work
+is the backbone. Source: Gemini design (https://gemini.google.com/share/1aee75f44cf8),
+content captured below.
 
-**Source:** a Gemini conversation the user flagged —
-https://gemini.google.com/share/1aee75f44cf8 (sign-in gated; content not captured
-here — read it directly when picking this up).
+**Design (from the Gemini conversation):**
+- Pipeline: QC + low-complexity filter -> host depletion -> Kraken2+Bracken ->
+  statistical NTC subtraction (drop taxa with Z < 10) -> high-threat flag ->
+  minimap2 verification + coverage check -> alert.
+- NTC thresholding: RPM-normalize (or spike-in scale); three options — fold-change
+  (sample > K x NTC, K>=5-10), mean+3sd, or Z = (rpm_sample - mu_ntc)/sigma_ntc
+  with Z>10 to alert. Zero-deviation fix: pseudocount + a hard floor (>=3 unique
+  non-overlapping reads) for high-consequence pathogens.
+- **Coverage breadth over read depth:** 100 reads at one genomic position = PCR/
+  contamination artifact; 100 reads across 80% of the genome = real threat.
 
-**Why it's interesting:** air is an even lower-biomass, higher-contamination matrix
-than clinical specimens, so the NTC-background / kitome work (Plan-4) and the
-grading layer are directly relevant; likely needs air-specific contaminant priors
-and specimen handling. Not scoped yet — parked for a future session.
+**Already built here (the NTC design is largely DONE):**
+- RPM normalization, pseudocount, hard read floor (min_reads), `--ntc` flag,
+  build-an-NTC-dictionary-and-subtract, tiered statistical subtraction — all in
+  `background.py` + `cli.py`. Our NB tail test is a more principled version of
+  their Z-score; the Plan-4 dispersion work refines exactly their mu/sigma model.
+- Kraken2 adapter + grading + PR benchmark (`benchmark.py`, `06/08` scripts).
+- Cross-mapping dedup (`crossmap.py`).
+
+**NEW ideas worth pursuing (gaps the air design highlights):**
+1. **Coverage breadth of coverage** — the biggest gap. We grade on read COUNT, not
+   genome breadth/evenness; the benchmark's FP tail is exactly where breadth would
+   help (artifact spikes at one locus vs. genome-wide signal). Add a minimap2
+   verification module that reports breadth + horizontal distribution for flagged
+   taxa, and fold it into grading.
+2. **Kaiju** (protein-level, six-frame) as a complementary classifier for divergent/
+   novel viruses that nucleotide k-mers miss — relevant for air viral surveillance.
+3. **Air-specific contaminant priors** — Cutibacterium, Ralstonia, Pseudomonas kit
+   contaminants (extend `contaminants.py` / a non-spiked air-NTC background).
+4. **Bracken** abundance re-estimation after Kraken2; **spike-in (ERCC/Zymo) scaling**
+   for cross-run RPM comparability.
+
+Not scoped yet — parked for a future session.
