@@ -227,3 +227,20 @@ flat when those FPs are already bottom-ranked by read count. Report both deltas.
 
 **Where to start:** sweep the dispersion prior over a plausible range, measure FPR at fixed α
 on the held-out split, report sensitivity.
+
+---
+
+## Future Exploration
+
+### Air-sample metagenomics — TO EXPLORE LATER
+
+**What:** Apply / adapt the pipeline to metagenomics from **air samples**.
+
+**Source:** a Gemini conversation the user flagged —
+https://gemini.google.com/share/1aee75f44cf8 (sign-in gated; content not captured
+here — read it directly when picking this up).
+
+**Why it's interesting:** air is an even lower-biomass, higher-contamination matrix
+than clinical specimens, so the NTC-background / kitome work (Plan-4) and the
+grading layer are directly relevant; likely needs air-specific contaminant priors
+and specimen handling. Not scoped yet — parked for a future session.
