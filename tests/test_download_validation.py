@@ -29,6 +29,19 @@ def test_parse_filereport_skips_header_only():
     assert dl._parse_filereport("run_accession\tfastq_ftp\tfastq_md5\n") == []
 
 
+def test_filename_from_url_zenodo_content():
+    # Zenodo: .../files/<name>/content -> the real name is before 'content'
+    assert dl._filename_from_url(
+        "https://zenodo.org/api/records/3632528/files/cami2_mouse_gut_gs.profile/content"
+    ) == "cami2_mouse_gut_gs.profile"
+
+
+def test_filename_from_url_plain():
+    assert dl._filename_from_url(
+        "https://ftp.sra.ebi.ac.uk/vol1/ERR588954_1.fastq.gz"
+    ) == "ERR588954_1.fastq.gz"
+
+
 def test_parse_filereport_keeps_existing_scheme():
     rows = dl._parse_filereport(
         "run_accession\tfastq_ftp\tfastq_md5\nERR9\thttps://example/x.fastq.gz\tzzz\n"

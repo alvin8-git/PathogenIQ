@@ -60,6 +60,17 @@ DATASETS = {
 }
 
 
+def _filename_from_url(url: str) -> str:
+    """Derive a sensible filename from a download URL. Handles the Zenodo pattern
+    .../files/<filename>/content, where the real name is the second-to-last
+    path segment rather than the literal 'content'."""
+    parts = urllib.parse.urlparse(url).path.rstrip("/").split("/")
+    name = parts[-1] if parts else ""
+    if name in ("content", "download") and len(parts) >= 2:
+        name = parts[-2]
+    return name or "download"
+
+
 def _parse_filereport(text: str) -> list[tuple[str, str, str]]:
     """Parse an ENA filereport TSV into (run_accession, https_url, md5) rows.
 
@@ -150,7 +161,7 @@ def main() -> None:
             files = ena_runs(d["accession"])
             print(f"  {len(files)} file(s) in {d['accession']}")
             for _run, url, md5 in files:
-                fn = url.rsplit("/", 1)[-1]
+                fn = _filename_from_url(url)
                 if args.dry_run:
                     print(f"  would download {url}")
                     continue
@@ -160,7 +171,7 @@ def main() -> None:
             if not urls:
                 print("  no URLs — pass CAMI file URLs with --url (see module docstring)")
             for url in urls:
-                fn = url.rsplit("/", 1)[-1]
+                fn = _filename_from_url(url)
                 if args.dry_run:
                     print(f"  would download {url}")
                     continue
@@ -169,7 +180,7 @@ def main() -> None:
     # extra --url for an ENA dataset selection (downloaded alongside)
     if args.url and DATASETS.get(args.dataset, {}).get("kind") != "urls":
         for url in args.url:
-            fn = url.rsplit("/", 1)[-1]
+            fn = _filename_from_url(url)
             if args.dry_run:
                 print(f"would download {url}")
                 continue
