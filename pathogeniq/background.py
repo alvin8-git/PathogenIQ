@@ -21,9 +21,15 @@ depth re-enters only when the rate is scaled back to an expected count at the
 sample's own depth.
 
 Single-NTC limitation: with one control, per-taxon dispersion is not estimable,
-so a shared weakly-informative dispersion prior is used. Quantifying the
-sensitivity of the false-positive rate to that prior is tracked as the Plan-4
-follow-up in todo.md.
+so a shared weakly-informative dispersion prior is used. VALIDATED 2026-06-22
+(scripts/10_validate_dispersion.py, docs/dispersion-validation-2026-06-22.md):
+the leave-one-out FPR on real kitome is 30-65x alpha at EVERY dispersion — the
+prior is not the lever. The limit is NTC coverage: ~10/18 kitome taxa occur in
+only one blank, so they hit the pseudocount floor and read as real regardless of
+r. This is the empirical reason a single pooled NTC (Tier 2) is capped at Grade
+B and never grants Grade A; controlled-alpha detection needs a batch-matched NTC
+(Tier 1) or many more blanks. The default r=2.0 is kept (lowering it can't fix
+coverage and worsens real-organism over-suppression).
 """
 from __future__ import annotations
 

@@ -191,17 +191,24 @@ kitome studies) for a cleaner, less Enterobacteriaceae-heavy prior;
 refresh from the lab's own NTCs. The cleanest results still need a per-batch
 NTC (Tier 1) — the shipped prior is a documented fallback, capped at Grade B.
 
-### 4-FollowUp — Validate the single-NTC NB dispersion prior
+### 4-FollowUp — Validate the single-NTC NB dispersion prior — RESOLVED 2026-06-22
 
-**What:** Quantify how the single-NTC negative-binomial background test's false-positive
-rate varies with the chosen dispersion prior, and pick a defensible default.
+**Done:** `scripts/10_validate_dispersion.py` +
+`docs/dispersion-validation-2026-06-22.md`. Leave-one-out FPR across the 15
+spike-free Salter blanks, swept over dispersion.
 
-**Why:** With one NTC, per-taxon dispersion is not estimable and the test leans on a shared
-prior. That prior is the weakest link in the method's FPR claim — if FPR is highly sensitive
-to it, the single-NTC (Tier 2) path's controlled-α guarantee is hollow.
+**Finding:** the single-NTC controlled-α guarantee IS hollow — but not because
+the prior is mis-set. LOO FPR is 30-65× α (0.01) at *every* dispersion
+(0.30→0.65 across 6 orders of magnitude); it never approaches α. The limit is
+**NTC coverage, not the prior**: ~10/18 kitome taxa occur in only one blank, so
+they hit the pseudocount floor in leave-one-out and read as real at any r.
+Sweeping dispersion cannot fix a coverage gap.
 
-**Depends on:** the multi-community truth set (the P1 data-acquisition task for the benchmark).
-Cannot run until labeled data exists.
+**Decision:** keep `_DEFAULT_DISPERSION = 2.0` (lowering it can't deliver
+α-control and worsens the documented real-organism over-suppression); keep
+Tier-2 capped at Grade B (this is its empirical justification). Real fix =
+batch-matched NTC (Tier 1) or many more pooled blanks; per-taxon dispersion only
+becomes worth modeling with ≥2–3 batch-matched NTCs.
 
 ### T10 — Benchmark (DONE — validated across 9 held-out communities)
 
