@@ -84,6 +84,14 @@ DATASETS = {
         "kind": "ena", "accession": "PRJNA1228129", "title_filter": "Spike",
         "desc": "Aircraft-cabin air SPIKE-INS (known positives for air detection precision/recall)",
     },
+    "air-aircraft-filter": {
+        # the 6 ENVIRONMENTAL (direct-extraction) aircraft-filter samples — the
+        # subset the paper reports explicit %s for (Sphingomonas 34.7%, E. coli
+        # 22.6%), for concordance validation. The "Metganome" typo distinguishes
+        # them from the "filter enrichment metagenome" (cultured) runs.
+        "kind": "ena", "accession": "PRJNA1228129", "title_filter": "Filter Metganome",
+        "desc": "Aircraft-filter ENVIRONMENTAL samples (6 runs; paper-documented taxa for concordance)",
+    },
 }
 
 
