@@ -173,6 +173,7 @@ def write_report(
     amr_hits: list | None = None,
     virulence_hits: list | None = None,
     spike_info=None,
+    mags: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -264,6 +265,19 @@ def write_report(
             "sample_volume": spike_info.sample_volume,
             "found": spike_info.found,
         }
+    if mags is not None:
+        payload["mags"] = [
+            {
+                "bin_id": m.bin_id,
+                "taxonomy": m.taxonomy,
+                "completeness": m.completeness,
+                "contamination": m.contamination,
+                "n_contigs": m.n_contigs,
+                "total_bp": m.total_bp,
+                "fasta_path": str(m.fasta_path),
+            }
+            for m in mags
+        ]
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)
 

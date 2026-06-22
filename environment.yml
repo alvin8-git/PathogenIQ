@@ -20,6 +20,12 @@ dependencies:
   # --- benchmark tools (T10: Kraken2 baseline) ---
   - kraken2
   - bracken
+  # --- optional: de novo assembly + MAG arm (--assemble); CheckM/GTDB-Tk each
+  #     need their own reference DB. Stage skips gracefully if absent. ---
+  - megahit        # assembly
+  - metabat2       # binning (+ jgi_summarize_bam_contig_depths)
+  - checkm-genome  # MAG completeness/contamination QC
+  - gtdbtk         # MAG genome taxonomy
   # --- Python runtime deps (mirror pyproject.toml) ---
   - click>=8.1
   - numpy>=1.26

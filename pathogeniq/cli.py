@@ -12,6 +12,7 @@ from .config import PipelineConfig, ReadType, SpecimenType
 from .em import bootstrap_ci, em_abundance
 from .host_remove import run_host_removal, run_phix_removal
 from .quantify import quantify_entries
+from .assembly import run_assembly_stage
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -49,10 +50,13 @@ def cli():
               help="Known copies/cells of spike added to the sample (anchors absolute load)")
 @click.option("--sample-volume", type=float, default=None,
               help="Volume the sample represents (e.g. mL air/blood) -> copies per volume")
+@click.option("--assemble", is_flag=True, default=False,
+              help="Run the de novo assembly + MAG arm (MEGAHIT/MetaBAT2/CheckM/GTDB-Tk) to "
+                   "recover novel organisms not in the reference DB (slow; tools/DBs required)")
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
         threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
         ntc_fastq, background_table, no_background,
-        spike_taxon, spike_copies, sample_volume):
+        spike_taxon, spike_copies, sample_volume, assemble):
     """Run the full PathogenIQ pipeline."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -131,8 +135,15 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"      WARNING: spike {spike_taxon} not detected — "
                        f"absolute quantification unavailable (check spike input)")
 
+    mags = None
+    if assemble:
+        click.echo("      De novo assembly + MAG recovery (this is slow)...")
+        mags = run_assembly_stage(cfg, nonhuman)
+        click.echo(f"      {len(mags)} MAG(s) recovered"
+                   if mags else "      No MAGs recovered (assembly tools/DBs missing or no bins)")
+
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
-                              virulence_hits=virulence_hits, spike_info=spike_info)
+                              virulence_hits=virulence_hits, spike_info=spike_info, mags=mags)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
