@@ -91,6 +91,7 @@ class ReportEntry:
     taxon_id: str = ""    # stable GCF/GCA accession; join key for NTC background
     tier: int = 3         # NTC background tier applied to this finding (1/2/3)
     crossmap_of: str = ""  # dominant relative this is likely cross-mapping from
+    absolute_copies: float | None = None  # spike-in absolute load (None = no spike)
 
     def as_input(self) -> GradingInput:
         """Normalize this entry into the struct the grading rule reads."""
@@ -171,6 +172,7 @@ def write_report(
     em_result: EMResult,
     amr_hits: list | None = None,
     virulence_hits: list | None = None,
+    spike_info=None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -201,7 +203,7 @@ def write_report(
             f,
             fieldnames=["organism", "taxon_id", "abundance_pct", "ci_lower_pct", "ci_upper_pct",
                         "read_count", "grade", "tier", "contaminant_risk", "invalid_stats",
-                        "crossmap_of"],
+                        "crossmap_of", "absolute_copies"],
             delimiter="\t",
         )
         writer.writeheader()
@@ -218,7 +220,13 @@ def write_report(
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
                 "crossmap_of": e.crossmap_of,
+                "absolute_copies": "" if e.absolute_copies is None else f"{e.absolute_copies:.6g}",
             })
+
+    vol = getattr(spike_info, "sample_volume", None) if spike_info is not None else None
+
+    def _per_volume(copies: float | None) -> float | None:
+        return round(copies / vol, 4) if (copies is not None and vol) else None
 
     json_path = out / "pathogeniq_report.json"
     payload = {
@@ -239,12 +247,23 @@ def write_report(
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
                 "crossmap_of": e.crossmap_of,
+                "absolute_copies": (None if e.absolute_copies is None
+                                    else round(e.absolute_copies, 4)),
+                "copies_per_volume": _per_volume(e.absolute_copies),
                 "amr_genes": amr_by_org.get(e.organism, []),
                 "virulence_factors": vir_by_org.get(e.organism, []),
             }
             for e in entries
         ],
     }
+    if spike_info is not None:
+        payload["spike_in"] = {
+            "taxon_id": spike_info.taxon_id,
+            "copies_added": spike_info.copies_added,
+            "spike_reads": spike_info.spike_reads,
+            "sample_volume": spike_info.sample_volume,
+            "found": spike_info.found,
+        }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)
 

@@ -11,6 +11,7 @@ from .background import (
 from .config import PipelineConfig, ReadType, SpecimenType
 from .em import bootstrap_ci, em_abundance
 from .host_remove import run_host_removal, run_phix_removal
+from .quantify import quantify_entries
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -42,9 +43,16 @@ def cli():
               help="Precomputed pooled background table (Tier 2); takes precedence over --ntc")
 @click.option("--no-background", is_flag=True, default=False,
               help="Disable NTC background correction (Tier 3, uncorrected)")
+@click.option("--spike-taxon", default=None,
+              help="Spike-in control taxon_id (must be in --db) for absolute quantification")
+@click.option("--spike-copies", type=float, default=None,
+              help="Known copies/cells of spike added to the sample (anchors absolute load)")
+@click.option("--sample-volume", type=float, default=None,
+              help="Volume the sample represents (e.g. mL air/blood) -> copies per volume")
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
         threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
-        ntc_fastq, background_table, no_background):
+        ntc_fastq, background_table, no_background,
+        spike_taxon, spike_copies, sample_volume):
     """Run the full PathogenIQ pipeline."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,7 +117,22 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     if removed:
         click.echo(f"      {removed} taxon(s) removed as background")
 
-    report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits, virulence_hits=virulence_hits)
+    spike_info = None
+    if spike_taxon and spike_copies:
+        entries, spike_info = quantify_entries(
+            entries, spike_taxon_id=spike_taxon, spike_copies=spike_copies,
+            sample_volume=sample_volume,
+        )
+        if spike_info.found:
+            click.echo(f"      Absolute quantification anchored on spike "
+                       f"{spike_taxon} ({spike_info.spike_reads:,} reads = "
+                       f"{spike_copies:g} copies)")
+        else:
+            click.echo(f"      WARNING: spike {spike_taxon} not detected — "
+                       f"absolute quantification unavailable (check spike input)")
+
+    report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
+                              virulence_hits=virulence_hits, spike_info=spike_info)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
