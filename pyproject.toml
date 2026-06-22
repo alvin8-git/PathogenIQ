@@ -28,7 +28,7 @@ dev = [
 include = ["pathogeniq*"]
 
 [tool.setuptools.package-data]
-pathogeniq = ["data/*.tsv"]
+pathogeniq = ["data/*.tsv", "data/*.fasta"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

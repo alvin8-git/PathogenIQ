@@ -103,6 +103,7 @@ def test_cli_run_invokes_pipeline(tmp_path):
 
     with patch("pathogeniq.cli.run_qc") as mock_qc, \
          patch("pathogeniq.cli.run_host_removal") as mock_hr, \
+         patch("pathogeniq.cli.run_phix_removal", side_effect=lambda cfg, fq: (fq, 0)), \
          patch("pathogeniq.cli.run_sketch_screen") as mock_sketch, \
          patch("pathogeniq.cli.run_targeted_alignment") as mock_align, \
          patch("pathogeniq.cli.em_abundance") as mock_em, \
@@ -159,6 +160,7 @@ def test_cli_run_produces_pdf(tmp_path):
     runner = CliRunner()
     with patch("pathogeniq.cli.run_qc", return_value=(tmp_path / "filt.fq.gz", QCMetrics(100, 90))), \
          patch("pathogeniq.cli.run_host_removal", return_value=(tmp_path / "nonhuman.fq.gz", HostRemovalMetrics(90, 80, 10))), \
+         patch("pathogeniq.cli.run_phix_removal", side_effect=lambda cfg, fq: (fq, 0)), \
          patch("pathogeniq.cli.run_sketch_screen", return_value=[SketchHit("Staphylococcus aureus", 0.05, tmp_path / "genome.fa")]), \
          patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
          patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
@@ -206,6 +208,7 @@ def test_cli_run_no_pdf_flag(tmp_path):
     runner = CliRunner()
     with patch("pathogeniq.cli.run_qc", return_value=(tmp_path / "filt.fq.gz", QCMetrics(100, 90))), \
          patch("pathogeniq.cli.run_host_removal", return_value=(tmp_path / "nonhuman.fq.gz", HostRemovalMetrics(90, 80, 10))), \
+         patch("pathogeniq.cli.run_phix_removal", side_effect=lambda cfg, fq: (fq, 0)), \
          patch("pathogeniq.cli.run_sketch_screen", return_value=[SketchHit("Staphylococcus aureus", 0.05, tmp_path / "genome.fa")]), \
          patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
          patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
@@ -241,6 +244,7 @@ def test_cli_run_no_candidates_exits_cleanly(tmp_path):
 
     with patch("pathogeniq.cli.run_qc") as mock_qc, \
          patch("pathogeniq.cli.run_host_removal") as mock_hr, \
+         patch("pathogeniq.cli.run_phix_removal", side_effect=lambda cfg, fq: (fq, 0)), \
          patch("pathogeniq.cli.run_sketch_screen") as mock_sketch:
 
         mock_qc.return_value = (tmp_path / "filtered.fastq.gz", QCMetrics(100, 95))

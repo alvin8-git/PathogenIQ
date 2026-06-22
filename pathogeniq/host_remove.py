@@ -72,3 +72,48 @@ def run_host_removal(cfg: PipelineConfig, filtered_fastq: Path) -> tuple[Path, H
         nonhuman_reads=nonhuman_reads,
     )
     return nonhuman_fastq, metrics
+
+
+def phix_reference_path() -> Path:
+    """Path to the packaged PhiX-174 reference (NC_001422.1), the Illumina
+    sequencing spike-in control."""
+    return Path(__file__).resolve().parent / "data" / "phix.fasta"
+
+
+def run_phix_removal(cfg: PipelineConfig, fastq: Path) -> tuple[Path, int]:
+    """Strip the PhiX-174 sequencing spike (added to most Illumina runs for base-
+    calling balance) from already host-depleted reads.
+
+    Aligns against the tiny bundled PhiX genome with minimap2 (``sr`` for short,
+    ``map-ont`` for long — minimap2 indexes the 5.4 kb reference on the fly, so no
+    pre-built index is needed) and keeps the unmapped reads. Non-blocking: if the
+    reference is missing the input is returned unchanged (0 removed), mirroring the
+    pipeline's graceful-degradation policy. Returns ``(filtered_fastq, n_removed)``.
+    """
+    ref = phix_reference_path()
+    if not ref.exists():
+        return fastq, 0
+    out = cfg.output_dir / "host_removal"
+    out.mkdir(parents=True, exist_ok=True)
+    nophix_fastq = out / "nophix.fastq.gz"
+    sam_file = out / "phix_aligned.sam"
+    preset = "sr" if cfg.read_type == ReadType.SHORT else "map-ont"
+
+    # no text=True: minimap2 stderr can carry non-UTF-8 bytes (see 0.2.0 fix)
+    subprocess.run(
+        ["minimap2", "-ax", preset, "-t", str(cfg.threads), str(ref), str(fastq), "-o", str(sam_file)],
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["bash", "-c", f"samtools view -f 4 -b {sam_file} | samtools fastq - | gzip > {nophix_fastq}"],
+        capture_output=True, check=True,
+    )
+    flagstat = subprocess.run(
+        ["samtools", "flagstat", str(sam_file)], capture_output=True, text=True, check=True,
+    ).stdout
+    phix_reads = 0
+    for line in flagstat.splitlines():
+        if "mapped" in line and "primary mapped" not in line and "%" in line:
+            phix_reads = int(line.split()[0])
+            break
+    return nophix_fastq, phix_reads

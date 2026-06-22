@@ -313,7 +313,7 @@ quantification — the gaps below.
 
 | # | Incorporation | Value | Relevance | Effort |
 |---|---------------|-------|-----------|--------|
-| 1 | **PhiX removal in QC** — they strip the PhiX sequencing spike (KneadData); we only remove human host. Add a PhiX decoy to host removal. | High | All samples | Low |
+| 1 | ~~**PhiX removal in QC**~~ — **DONE 2026-06-22**: `run_phix_removal` in `host_remove.py` (minimap2 vs bundled `data/phix.fasta` NC_001422.1, sr/map-ont), wired after host removal in the sample + NTC paths; non-blocking if ref missing. | High | All samples | Low |
 | 2 | **Spike-in recovery normalization / absolute quantification** — synthetic DNA spike at known copies → recovery efficiency → absolute load (not just RPM). Enables cross-run/cross-site comparability + pathogen load. (Supersedes the parked "ERCC/Zymo scaling" note.) | High | Clinical load + air surveillance | Med |
 | 3 | **Optional assembly + MAG stage** — MEGAHIT → MetaBAT2 → CheckM (≥50%/≤10%) → GTDB-Tk → Prokka. Recovers novel/divergent/uncultured organisms read-based profiling misses, and links ARGs to a genome. Air has many unknown environmental taxa. | High | Air surveillance (novel orgs) | High |
 | 4 | **Enrichment (BHI culture) as a documented low-biomass wet-lab option** — boosts DNA yield, MAG + ARG recovery; cost = culture bias toward Firmicutes. Not pipeline code — a sample-prep SOP for Plan 5 air NTC/spike runs. | Med | Air (very low biomass) | Low (doc) |

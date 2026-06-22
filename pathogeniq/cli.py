@@ -10,7 +10,7 @@ from .background import (
 )
 from .config import PipelineConfig, ReadType, SpecimenType
 from .em import bootstrap_ci, em_abundance
-from .host_remove import run_host_removal
+from .host_remove import run_host_removal, run_phix_removal
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -68,6 +68,9 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     click.echo("[2/6] Host removal...")
     nonhuman, hr_metrics = run_host_removal(cfg, filtered)
     click.echo(f"      Microbial fraction: {hr_metrics.microbial_fraction:.2%}")
+    nonhuman, n_phix = run_phix_removal(cfg, nonhuman)
+    if n_phix:
+        click.echo(f"      {n_phix:,} PhiX spike-in reads removed")
 
     click.echo("[3/6] Sketch screening...")
     hits = run_sketch_screen(cfg, nonhuman)
@@ -125,6 +128,7 @@ def _classify_taxon_counts(cfg: PipelineConfig, fastq: Path) -> tuple[dict[str, 
     ntc_cfg.output_dir.mkdir(parents=True, exist_ok=True)
     filtered, _ = run_qc(ntc_cfg)
     nonhuman, _ = run_host_removal(ntc_cfg, filtered)
+    nonhuman, _ = run_phix_removal(ntc_cfg, nonhuman)
     hits = run_sketch_screen(ntc_cfg, nonhuman)
     if not hits:
         return {}, 0
