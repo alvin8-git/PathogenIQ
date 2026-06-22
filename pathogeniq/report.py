@@ -26,6 +26,10 @@ _MIN_READS: dict[SpecimenType, int] = {
     SpecimenType.CSF: 2,
     SpecimenType.BAL: 10,
     SpecimenType.TISSUE: 10,
+    # ponytail: provisional air floor — low for sensitivity (air is ultra-low
+    # biomass), since NTC subtraction + breadth gate are the real FP controls.
+    # Calibrate on labeled air data (cf. the held-out floor work) before clinical use.
+    SpecimenType.AIR: 5,
 }
 
 _MAX_CI_WIDTH_A = 0.15

@@ -52,6 +52,28 @@ def test_contaminant_registry_has_all_specimen_types():
         assert stype in CONTAMINANT_PRIORS
 
 
+def test_air_kitome_flagged():
+    for org in ("Sphingomonas hankookensis", "Methylobacterium radiotolerans",
+                "Cutibacterium acnes", "Ralstonia pickettii"):
+        e = flag_contaminants([_entry(org, SpecimenType.AIR)])[0]
+        assert e.contaminant_risk is True, org
+
+
+def test_air_does_not_demote_real_pathogens():
+    # the whole point of the air wedge: pathogens that overlap kitome genera must
+    # NOT be flagged as contaminants (no genus-broad Pseudomonas/Acinetobacter)
+    for org in ("Pseudomonas aeruginosa", "Acinetobacter baumannii",
+                "Staphylococcus aureus", "Escherichia coli"):
+        e = flag_contaminants([_entry(org, SpecimenType.AIR)])[0]
+        assert e.contaminant_risk is False, org
+
+
+def test_air_read_floor():
+    # AIR floor is 5: 4 reads -> Grade X (insufficient), 5 reads -> gradeable
+    assert _entry("Klebsiella pneumoniae", SpecimenType.AIR, read_count=4).grade == EvidenceGrade.X
+    assert _entry("Klebsiella pneumoniae", SpecimenType.AIR, read_count=5).grade != EvidenceGrade.X
+
+
 def test_grade_b_contaminant_downgrades_to_c():
     # Grade B entry (enough reads, wide CI) that is a contaminant → reported as C
     entry = _entry("Cutibacterium acnes", SpecimenType.BLOOD,

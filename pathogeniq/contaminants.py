@@ -39,6 +39,20 @@ CONTAMINANT_PRIORS: dict[SpecimenType, list[str]] = {
         "Fusobacterium nucleatum",
     ],
     SpecimenType.TISSUE: [],
+    # Air/bioaerosol kitome + reagent/water contaminants (Salter 2014; Jeilu 2025).
+    # Deliberately NOT genus-broad on Pseudomonas / Acinetobacter / Stenotrophomonas:
+    # those overlap real airborne pathogens (P. aeruginosa, A. baumannii) and the
+    # whole point of the air wedge is to detect pathogens, not demote them.
+    SpecimenType.AIR: [
+        "Cutibacterium acnes",
+        "Staphylococcus epidermidis",
+        "Sphingomonas",
+        "Methylobacterium",
+        "Ralstonia",
+        "Bradyrhizobium",
+        "Micrococcus luteus",
+        "Paenibacillus",
+    ],
 }
 
 

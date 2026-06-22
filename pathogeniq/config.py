@@ -13,6 +13,7 @@ class SpecimenType(str, Enum):
     CSF = "csf"
     BAL = "bal"
     TISSUE = "tissue"
+    AIR = "air"      # environmental air / bioaerosol (filters, impingers, masks)
 
 
 @dataclass
