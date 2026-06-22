@@ -135,18 +135,23 @@ This converges to maximum-likelihood estimates of the relative abundances θ, un
 
 **Why it matters**: Clinicians need actionable information, not raw numbers. A report saying "Staphylococcus aureus: 0.8% abundance" is less useful than "Staphylococcus aureus: Grade A — high-confidence pathogen."
 
-**Science**: PathogenIQ assigns grades based on three criteria:
+**Science**: Grading is a **pure function** of a single `GradingInput` record (read count, abundance, CI width, contaminant flag, specimen type, NTC tier, cross-mapping flag) — see `pathogeniq/report.py::grade()`. Keeping it pure and side-effect-free makes the decision auditable and unit-testable, and lets the *same* function grade output from any upstream classifier (it is reused to score Kraken2 output in the benchmark, §6).
 
 | Grade | Criteria | Clinical Interpretation |
 |-------|----------|------------------------|
-| **A** | Sufficient reads for specimen type + narrow CI (≤15 pp) + not a known contaminant | High-confidence pathogen. Action likely warranted. |
-| **B** | Sufficient reads + not a contaminant, but CI wider than 15 pp | Probable pathogen. Consider clinical context. |
+| **A** | Sufficient reads for specimen type + narrow CI (≤15 pp) + not a contaminant + **batch-matched NTC available (Tier 1)** | High-confidence pathogen. Action likely warranted. |
+| **B** | Sufficient reads + not a contaminant, but CI wider than 15 pp **or no batch-matched NTC (Tier 2/3)** | Probable pathogen. Consider clinical context. |
 | **C** | Sufficient reads, but known contaminant or uncertain origin | Possible pathogen / contaminant. Corroborate with culture or clinical picture. |
-| **X** | Insufficient reads for specimen type | Insufficient evidence. Do not act on this finding alone. |
+| **X** | Insufficient reads for specimen type, **degenerate statistics** (NaN/inf/negative), **or flagged as a cross-mapping artifact / NTC background** | Insufficient evidence. Do not act on this finding alone. |
 
 The specimen-dependent read thresholds reflect biological prior probability: blood and CSF normally have very few circulating organisms, so even 2–3 reads of a pathogen may be significant. BAL and tissue samples contain abundant commensal flora, so higher thresholds prevent false positives.
 
 The 15 percentage-point CI width threshold for Grade A was chosen empirically: it corresponds roughly to a "well-estimated" abundance where the lower bound is within a factor of 2–3 of the point estimate, providing sufficient precision for clinical interpretation.
+
+Two additional gates were added in Plan 4 and are the subject of §5:
+
+- **NTC tier cap.** Grade A is *only* reachable when a batch-matched no-template control (NTC) accompanies the run (Tier 1). Without one, the best attainable grade is B — the laboratory cannot claim the highest confidence for a finding it has not controlled for reagent/kitome contamination. This cap is the central honesty mechanism of the grading layer.
+- **Cross-mapping dedup.** When two reference genomes are >95% identical (e.g. *Escherichia coli* and the four *Shigella* species), reads from the dominant organism shadow-map onto its near-twins, manufacturing phantom polymicrobial calls. `pathogeniq/crossmap.py` detects when a known cross-mapping group member is outnumbered ≥10× by a relative and demotes the minor member to Grade X.
 
 ---
 
@@ -191,9 +196,59 @@ The colour coding follows clinical conventions: green for high confidence, orang
 
 ---
 
-## 5. Validation Philosophy
+## 5. NTC-Aware Background Subtraction & Tiered Grading (Plan 4)
 
-PathogenIQ is validated against the **ZymoBIOMICS D6300** microbial community standard, a commercially available mock community with known composition:
+This is the core scientific contribution that distinguishes PathogenIQ from a fast classifier with a pretty report. It directly attacks the central problem of §2: **separating a real low-abundance pathogen from reagent and environmental contamination** in a low-biomass clinical specimen.
+
+### 5.1 Motivation — the kitome problem
+
+DNA extraction kits, enzymes, water, and lab surfaces are not sterile. They carry trace bacterial DNA — collectively the **"kitome"** and **"splashome"**. In a high-biomass sample this is invisible noise. But clinical metagenomics operates at the opposite extreme: a blood or CSF specimen may yield only a few hundred to a few thousand microbial reads total. At that depth, the kitome is not noise — it is a *competing signal*, often larger than the pathogen it obscures. The literature is unambiguous that contaminants scale inversely with input biomass (Salter et al. 2014), and that the same handful of genera — *Pseudomonas*, *Cutibacterium*, *Ralstonia*, *Bradyrhizobium*, Enterobacteriaceae — recur across studies and labs.
+
+A pipeline that reports any organism above a fixed read threshold therefore generates a flood of false positives in exactly the samples where diagnostic stakes are highest. The clinically correct null hypothesis is not "this organism is absent" but **"this organism is indistinguishable from what my reagents would have produced anyway."** Testing that hypothesis requires a model of the background.
+
+### 5.2 The no-template control (NTC)
+
+The instrument for measuring reagent background is a **no-template control**: the full extraction-and-sequencing protocol run on a blank (water/buffer, no clinical material). Whatever DNA appears in an NTC came from the process, not the patient. PathogenIQ models the per-organism background rate from one or more NTCs and tests each sample organism against it (`pathogeniq/background.py`).
+
+**Why rates, not counts.** A deep sample and a shallow NTC are not comparable by raw count. The background is normalised to **reads per million classified reads (RPM)**, making the test depth-invariant; depth re-enters only when a background *rate* is scaled back to an expected *count* at the sample's own sequencing depth.
+
+**The statistical test.** For each organism, the expected background count at the sample's depth is `λ = rate_RPM × sample_depth / 1e6`. The observed sample count is compared against a **negative-binomial upper tail** with mean λ and a dispersion parameter `r` (overdispersion captures the fact that contamination is lumpier than a Poisson process). A low tail p-value means the observed count exceeds what background plausibly explains → real signal; a high p-value (≥ α, default 0.01) means the organism is indistinguishable from background and is zeroed out before grading. Two guards make this robust at low biomass:
+
+- A **pseudocount** (0.5 RPM) gives every organism — even those absent from the NTC — a finite background floor, so a genuinely novel pathogen still has to clear a small bar rather than dividing by zero.
+- A **minimum-support floor** (≥2 reads summed across controls) prevents a single spurious read in a thin blank from inflating to a huge RPM that would suppress real low-level pathogens.
+
+### 5.3 The tier system — honesty about provenance
+
+Not all background models are equal, and the grading layer is explicit about it:
+
+| Tier | Background source | Max grade | Rationale |
+|------|-------------------|-----------|-----------|
+| **Tier 1** | Batch-matched NTC (run alongside this specimen, same reagent lot) | **A** | The only configuration that actually controls this run's contamination. |
+| **Tier 2** | Pooled/foreign background (shipped default, built from public blanks) | **B** | Catches universal kitome genera, but a frozen prior cannot capture this batch's reagent lot. Capped. |
+| **Tier 3** | No background available | **B** | Graded uncorrected; cannot claim contamination was controlled. |
+
+This tiering is why a batch-matched NTC is *required* for any Grade A call (§3, Stage 6). It encodes a clinical-laboratory principle: you may not assert the highest confidence in a finding whose contamination you did not control.
+
+### 5.4 What validation taught us about the limits
+
+Two empirical studies (reproducible via `scripts/10_validate_dispersion.py` and `scripts/06`/`08`) shaped the final design and are documented honestly because they bound what the method can claim:
+
+- **The dispersion prior is not the lever; coverage is.** A leave-one-out experiment across spike-free kitome blanks showed the single-NTC false-positive rate is 30–65× the nominal α at *every* dispersion value — it never approaches α. The cause is coverage, not the prior: ~10 of 18 kitome taxa appear in only one blank, so a contaminant absent from the (small) control pool hits the pseudocount floor and reads as "real" regardless of `r`. **This is the empirical justification for the Tier-2 → Grade B cap:** a single pooled background genuinely cannot deliver controlled-α detection, and no parameter tuning rescues it — only more/batch-matched NTCs do.
+- **The kitome background must not be applied blindly.** On the Zymo benchmark, the pooled Salter background *dropped recall* by suppressing real Enterobacteriaceae (genuine Zymo members that are also common kitome). Consequently the background filter is not auto-applied to samples likely to contain Enterobacteriaceae; the cross-mapping dedup (§3) — which removes only phantom relatives of a dominant organism at zero recall cost — is the safe, always-on artifact filter.
+
+### 5.5 Building the shipped Tier-2 background
+
+The packaged `pathogeniq/data/background_default.tsv` is pooled from **genuine non-spiked negative-control shotgun datasets** (`scripts/11_pool_blank_background.py`), classified against the same Tier-1 reference DB so the per-organism rates are directly comparable. Because the dispersion study showed coverage is the binding constraint, the build deliberately pools blanks from **multiple independent labs and reagent types** to widen taxon coverage and dilute any single study's idiosyncrasy. The datasets are listed in §6.
+
+---
+
+## 6. Validation & Benchmarking
+
+PathogenIQ's validation evolved from a single mock standard into a multi-community, cross-environment benchmark with a leakage-free held-out split. Three classes of data are used, for three different purposes.
+
+### 6.1 Mock-standard validation — ZymoBIOMICS D6300
+
+The **ZymoBIOMICS D6300** microbial community standard is a commercially available mock community with known composition:
 
 - 8 bacterial species at 12% gDNA abundance each
 - 2 fungal species at 2% gDNA abundance each
@@ -210,11 +265,50 @@ PathogenIQ's integration tests verify:
 - **Accuracy**: measured abundance within 20% relative error of expected
 - **Specificity**: no Grade A false positives outside the known panel
 
-These criteria are deliberately stringent: a pipeline that passes all three tests has demonstrated both sensitivity (catches real organisms) and specificity (does not invent organisms).
+These criteria are deliberately stringent: a pipeline that passes all three tests has demonstrated both sensitivity (catches real organisms) and specificity (does not invent organisms). Three sequencing runs of D6300 (UDB-32/-40/-48) are used together to test run-to-run reproducibility.
+
+### 6.2 Cross-community truth — CAMI II simulated communities
+
+A mock standard is a single community; it cannot show whether the grading thresholds *generalise*. For that PathogenIQ uses the **CAMI II** (Critical Assessment of Metagenome Interpretation) challenge datasets — CAMISIM-simulated short-read communities shipped with a **gold-standard taxonomic profile** (`.profile`), parsed per-sample by `pathogeniq/benchmark.py::parse_cami_profile`. Three structurally different environments are used as held-out communities:
+
+| Community | Character | Truth (per-sample, species) |
+|-----------|-----------|------------------------------|
+| **Mouse gut** | Host-associated anaerobes | 64 species |
+| **Marine** | Open-environment diversity | 259 species |
+| **Strain-madness** | Few species, many near-identical strains | 20 species |
+
+Strain-madness is deliberately the cross-mapping stress test (§3) — it is where read-count signal alone struggles most.
+
+### 6.3 Real low-biomass communities — HMP body sites
+
+To test on genuinely host-associated, low-biomass material (the regime closest to clinical specimens), PathogenIQ adds three **CAMI II Human Microbiome Project** body-site samples — **skin, airway, oral**. These ship per-read truth (`reads_mapping.tsv`) rather than a profile; truth is reconstructed by `scripts/09_reads_mapping_truth.py`. Because their 97%-identity OTU truth resolves only to **genus**, they are scored at genus rank as a *separate* panel (mixing ranks in one average would be apples-to-oranges).
+
+### 6.4 NTC background datasets
+
+The Tier-2 background (§5.5) is built from public **negative-control** shotgun runs, downloaded via `scripts/04_download_validation_data.py` (ENA filereport API) and classified by `scripts/11_pool_blank_background.py`:
+
+| Dataset | ENA accession | Role |
+|---------|---------------|------|
+| Salter et al. 2014 reagent controls | ERP006808 | Initial background; **deprecated** as a default source — it is a spiked *S. bongori* dilution series from one lab, so it is idiosyncratic and Enterobacteriaceae-heavy. |
+| HUNT One Health reagent/extraction blanks | PRJEB66439 | Non-spiked, true-`RANDOM` shotgun blanks; deep enough to anchor per-organism RPM. |
+| Qiita 14332 nucleic-acid pipeline blanks | PRJEB56784 | Non-spiked EtOH/IPA/swab/buffer reagent blanks across reagent types — coverage *breadth*. |
+
+The shift from Salter-only to a pool of HUNT + Qiita blanks across independent labs is a direct response to the §5.4 finding that **NTC coverage**, not the statistical prior, limits the background's quality.
+
+### 6.5 Held-out benchmark results
+
+The grading layer is scored against raw Kraken2 (a strong, widely-used classifier) on each labeled community. Crucially, the read-count operating point (floor) is **calibrated once on the three Zymo runs and then frozen**, so every CAMI/HMP community is genuinely out-of-sample (`scripts/08_heldout_pr_auc.py`). The headline metric is **operating-point precision** at preserved recall — grading's value is removing the low-support false-positive tail, which a ranking metric like PR-AUC is insensitive to when those false positives are already bottom-ranked.
+
+| Held-out panel | Communities | Raw precision | Graded precision | Recall |
+|----------------|-------------|---------------|------------------|--------|
+| CAMI II (species rank) | mouse-gut, marine, strain | 0.011 | **0.494** (≈45×) | 0.684 |
+| HMP (genus rank) | skin, airway, oral | 0.008 | **0.352** (≈44×) | 0.952 |
+
+A single floor learned on a mock standard lifts precision ~45× across **nine held-out communities** spanning two taxonomic ranks and four environment types, none seen during calibration — strong evidence the grading wedge is community- and rank-agnostic rather than overfit to Zymo. Full per-community results: `docs/benchmark-results-2026-06-21.md`.
 
 ---
 
-## 6. Future Directions
+## 7. Future Directions
 
 ### Plan 3: Nextflow Orchestration
 
@@ -223,13 +317,18 @@ The current Python CLI is suitable for single-machine execution. For clinical de
 - **Scalability**: automatic parallelization of alignment and sketching steps
 - **Portability**: run on SLURM, AWS Batch, or local Docker without code changes
 
-### Plan 4: Validation Framework
+### Plan 4: NTC-Aware Grading & Validation — largely delivered
 
-Beyond ZymoBIOMICS, clinical validation requires:
-- **Spike-in studies**: known pathogens added at varying concentrations to clinical matrices (blood, CSF)
-- **Clinical sample benchmarking**: comparison against culture and multiplex PCR on retrospective patient samples
-- **ROC analysis**: receiver operating characteristic curves quantifying sensitivity/specificity trade-offs at different read thresholds
-- **Inter-laboratory reproducibility**: same samples sequenced and analysed at multiple sites
+The NTC-aware tiered grading, NB background subtraction, cross-mapping dedup, and the multi-community held-out benchmark (§5, §6) are implemented and tested. What remains to reach clinical-grade validation:
+
+- **Batch-matched NTC studies**: the §5.4 result shows a single pooled background cannot deliver controlled-α detection — Tier 1 (a per-batch NTC) is the path to Grade A, and needs prospective evaluation on paired sample+NTC runs.
+- **Spike-in studies**: known pathogens added at varying concentrations to clinical matrices (blood, CSF) to characterise the limit of detection per specimen type.
+- **Clinical sample benchmarking**: comparison against culture and multiplex PCR on retrospective patient samples.
+- **Inter-laboratory reproducibility**: same samples sequenced and analysed at multiple sites.
+
+### Plan 5: Air / bioaerosol surveillance (exploratory)
+
+The same NTC backbone, applied to environmental air samples (even lower biomass, even more kitome-dominated), with breadth-of-coverage gating to separate clumped contamination artifacts from genome-wide real signal. Parked for future exploration; see `todo.md`.
 
 ### Long-Term Vision
 
@@ -239,11 +338,22 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 
 ---
 
-## 7. Glossary
+## 8. Glossary
 
 | Term | Definition |
 |------|------------|
 | **Metagenomics** | Sequencing of DNA from mixed microbial communities without prior culturing |
+| **NTC (No-Template Control)** | A blank (water/buffer, no clinical material) run through the full protocol to measure reagent/process background |
+| **Kitome** | Background microbial DNA contributed by extraction kits, reagents, and lab surfaces; dominant noise in low-biomass samples |
+| **RPM (Reads Per Million)** | Depth-normalised abundance unit (reads per million classified reads) making samples and NTCs comparable |
+| **Negative binomial** | Overdispersed count distribution used to model background; tail p-value tests whether an observed count exceeds background |
+| **Dispersion (r)** | Negative-binomial parameter controlling background variance; smaller r = more overdispersion |
+| **Tier (1/2/3)** | Provenance level of the background model (batch-matched / pooled / none); caps the maximum attainable grade |
+| **Cross-mapping** | Reads from one organism mapping onto a >95%-identical relative, manufacturing phantom detections (e.g. *E. coli* → *Shigella*) |
+| **CAMI** | Critical Assessment of Metagenome Interpretation; simulated communities with gold-standard truth profiles |
+| **OTU** | Operational Taxonomic Unit; a clustered group of sequences (97% identity here), often resolving only to genus |
+| **PR-AUC / precision@recall** | Ranking and operating-point summaries of a precision–recall curve; the benchmark metrics |
+| **Held-out evaluation** | Calibrating a threshold on one set of communities and reporting on disjoint, unseen communities |
 | **Shotgun sequencing** | Random fragmentation and sequencing of all DNA in a sample |
 | **Host removal** | Computational subtraction of human DNA reads from a clinical sample |
 | **MinHash** | Probabilistic sketching technique for estimating Jaccard similarity between sets |
@@ -264,7 +374,7 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 
 ---
 
-## 8. References
+## 9. References
 
 1. **MinHash**: Broder, A. Z. (1997). On the resemblance and containment of documents. *Proceedings of Compression and Complexity of Sequences*.
 2. **Scaled MinHash for genomics**: Brown, C. T., & Irber, L. (2016). sourmash: a library for MinHash sketching of DNA. *Journal of Open Source Software*.
@@ -275,7 +385,13 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 7. **CARD**: Alcock, B. P., et al. (2020). CARD 2020: antibiotic resistome surveillance with the comprehensive antibiotic resistance database. *Nucleic Acids Research*.
 8. **Clinical metagenomics**: Wilson, M. R., et al. (2019). Actionable diagnosis of neuroleptospirosis by next-generation sequencing. *New England Journal of Medicine*.
 9. **ZymoBIOMICS standard**: https://www.zymoresearch.com/products/zymobiomics-microbial-community-dna-standard
+10. **Reagent contamination / kitome**: Salter, S. J., et al. (2014). Reagent and laboratory contamination can critically impact sequence-based microbiome analyses. *BMC Biology*.
+11. **CAMI benchmark**: Meyer, F., et al. (2022). Critical Assessment of Metagenome Interpretation — the second round of challenges. *Nature Methods*.
+12. **Kraken2 (benchmark baseline)**: Wood, D. E., Lu, J., & Langmead, B. (2019). Improved metagenomic analysis with Kraken 2. *Genome Biology*.
+13. **NTC datasets**: HUNT One Health (ENA PRJEB66439); Qiita study 14332 (ENA PRJEB56784) — non-spiked negative-control shotgun runs pooled for the Tier-2 background.
 
 ---
 
-*Last updated: 2026-04-23*
+*Last updated: 2026-06-22*
+
+*Design changes reflected: Plan 4 NTC-aware tiered grading, negative-binomial background subtraction (`background.py`), cross-mapping dedup (`crossmap.py`), the Kraken2 grading adapter and multi-community held-out benchmark (`benchmark.py`, `scripts/06`/`08`/`09`/`10`/`11`), and the dispersion-prior validation. See also `docs/benchmark-results-2026-06-21.md` and `docs/dispersion-validation-2026-06-22.md`.*
