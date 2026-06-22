@@ -9,9 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 - Nextflow orchestration (local Docker, SLURM, AWS Batch)
-- Validation framework with ROC curves and benchmark suite
+- Batch-matched NTC (Tier 1) prospective evaluation for Grade-A claims
+- Broader/cleaner Tier-2 background from more non-spiked reagent-blank studies
+- Air / bioaerosol surveillance adaptation (Plan 5) — breadth-of-coverage gating
 - Web dashboard for clinical users
 - FHIR-compatible report export
+
+---
+
+## [0.3.0] — 2026-06-22 — NTC-Aware Grading & Multi-Community Benchmark
+
+The headline of this release is **Plan 4**: a statistically principled, provenance-aware grading layer that subtracts reagent/kitome background and is validated against a strong classifier across nine held-out communities.
+
+### Added
+- **NTC background subtraction** (`pathogeniq/background.py`)
+  - `BackgroundModel` (per-taxon RPM rates, control count, dispersion, tier) built from one or more no-template controls
+  - Negative-binomial upper-tail test (`background_pvalue` / `is_background`) — depth-invariant via RPM normalisation, with a pseudocount floor (0.5 RPM) and a min-support floor (≥2 reads) so thin blanks don't over-suppress
+  - `build_background`, `load_background_table`, `write_background_table`, `load_default_background` — pooled Tier-2 table format with a `# tier=N` header
+- **Tiered grading** — Grade A requires a batch-matched NTC (Tier 1); pooled/foreign (Tier 2) and no-NTC (Tier 3) cap at Grade B
+- **Pure `grade(GradingInput)` function** (`pathogeniq/report.py`) — read count, abundance, CI width, contaminant flag, specimen, tier, cross-map flag → grade; degenerate stats (NaN/inf/negative) → X. Auditable and classifier-agnostic.
+- **Cross-mapping dedup** (`pathogeniq/crossmap.py`) — flags the minor member of a known >95%-identical group (E. coli / Shigella spp.) when outnumbered ≥10× by a relative, demoting it to Grade X (zero recall cost)
+- **`taxon_id` threading** — GCF/taxid join key flows through `sketch.py` → `align.py` → `report.py` so the background and grading layers share one identifier space; `build_entries()` consolidates construction, dedup, contaminant flagging, and background filtering
+- **Breadth-of-coverage** (`pathogeniq/coverage.py`) — Lander-Waterman expected breadth + depth-normalised breadth ratio (catches clumped/PCR artifacts)
+- **HTML clinical report** (`pathogeniq/html_report.py`) rendering the same `ReportEntry` rows
+- **Benchmark toolkit** (`pathogeniq/benchmark.py`) — Kraken2 report parser, `kraken_to_grading_inputs` adapter (Wilson-CI stand-in), CAMI `.profile` + `reads_mapping.tsv` truth loaders (per-sample / per-rank), and PR scoring (`average_precision`, `precision_at_recall`, `precision_recall`)
+- **Validation & data scripts** — `04` ENA/NTC + blank downloader (title filter, run limit), `05` kitome-control selection, `06` single-community benchmark, `07` custom Kraken2 DB builder, `08` multi-community held-out PR-AUC (per-rank), `09` reads_mapping→truth rollup, `10` dispersion-prior validation, `11` blank-pool background builder
+- **CLI flags** `--ntc`, `--background`, `--no-background`; shipped Tier-2 `pathogeniq/data/background_default.tsv`
+- **`environment.yml`** conda environment (adds kraken2, bracken for benchmarking)
+- Unit tests for every new module (`tests/test_background.py`, `test_benchmark.py`, `test_crossmap`-equivalents, `test_html_report.py`, `test_download_validation.py`, `test_select_kitome.py`, plus `--selfcheck` harnesses in scripts 09/10)
+
+### Validated
+- **Nine held-out communities, two ranks.** A read-count floor calibrated once on three Zymo D6300 runs lifts operating-point precision ~45× at preserved recall, generalising to CAMI II species communities (mouse-gut/marine/strain, mean P 0.011→0.494) and HMP genus body sites (skin/airway/oral, mean P 0.008→0.352). Details: `docs/benchmark-results-2026-06-21.md`.
+- **Dispersion-prior study.** Leave-one-out FPR on kitome blanks is 30–65× α at *every* dispersion — coverage, not the prior, is the limit; the empirical justification for capping Tier-2 at Grade B. Details: `docs/dispersion-validation-2026-06-22.md`.
+
+### Changed
+- `ReportEntry`: added `taxon_id`, `tier`, `crossmap_of` fields; `grade` / `invalid_stats` now delegate to the pure `grade()` function via `as_input()`
+- `AlignmentResult` gained a required `taxon_ids` field; `SketchHit` gained `taxon_id`
+- `write_report()` now renders pre-built entries from `build_entries()`; JSON/TSV include `taxon_id`, `tier`, `contaminant_risk`, `invalid_stats`, `crossmap_of`
+- Tier-1 clinical DB expanded to ~110 pathogen genomes; `CLAUDE.md` architecture + context-mode routing refreshed
+
+### Fixed
+- E. coli/Shigella reference cross-mapping inflating phantom polymicrobial calls (now deduped to Grade X)
+- CAMI gold-standard profiles pooled all samples; `parse_cami_profile` now selects one sample's `@SampleID` block
+- `load_truth` auto-detects CAMI `.profile` vs plain taxid lists (benchmark TP=0 bug)
+- Kitome background provenance corrected: Salter Enterobacteriaceae are genuine kitome (stable across spike thresholds), not spike cross-mapping
 
 ---
 
@@ -138,5 +179,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Python | Key Dependencies |
 |---------|--------|------------------|
+| 0.3.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1, reportlab ≥4.0; external: kraken2, bracken (benchmarking only) |
 | 0.2.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1, reportlab ≥4.0 |
 | 0.1.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1 |
