@@ -39,6 +39,26 @@ matters for air. So the two checks are complementary:
 - **Assembly concordance** = recover the *environmental* dominants de novo and
   GTDB-Tk-classify them, vs the paper's 9 MAGs.
 
+## Paper supplements — checked 2026-06-22
+
+The article ships **exactly one** supplement: *Additional file 1 — Supplementary
+Table 1 (metadata)* = `MOESM1_ESM.xlsx`, a sample metadata + qPCR table (sample
+name, type, processing, DNA conc, log-normalized 16S copies). **There is no
+downloadable per-sample species table** (no MOESM2+, no data-repo link). So
+species concordance is limited to figure-level data. The xlsx is still useful:
+confirms AF1–6 = the aircraft filters, and its copy numbers can sanity-check the
+spike-in absolute quantification.
+
+**Most granular paper species set = Fig 3G top-20 heatmap** (across all samples):
+Staphylococcus epidermidis, Cutibacterium acnes, GGB2722_SGB3663, S. hominis,
+Sphingomonas hankookensis, Paenibacillus humicus, **Pseudomonas aeruginosa**,
+**Escherichia coli**, Methylobacterium radiotolerans, S. capitis, Streptococcus
+mitis, S. australis, **Bacillus cereus**, **Bacillus subtilis**, S. warneri,
+Priestia megaterium, **Clostridium perfringens**, Limosilactobacillus fermentum,
+Brevibacterium parabrevis. (**bold** = clinically-relevant + plausibly in our
+tier-1 DB → the read-based concordance targets; the rest are commensal/
+environmental, recoverable only via the triggered assembly arm.)
+
 ## Method
 
 1. Build an **air-specific NTC background** from the 6 `air-aircraft-ntc` controls
