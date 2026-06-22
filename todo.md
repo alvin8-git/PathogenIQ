@@ -326,3 +326,56 @@ quantification — the gaps below.
 **Suggested order:** #1 (PhiX, quick correctness) → #6 (VFDB, near-free) →
 #2 (spike-in absolute quant) → #3 (assembly/MAG, the big surveillance unlock,
 pairs with the PRJNA1228129 air data) → the rest as surveillance scope grows.
+
+---
+
+## Wet-lab experimental design — air metagenome runs (Plan 5 prerequisite)
+
+Air is ultra-low-biomass and kitome-dominated, so the **controls are not optional
+extras — they are what makes a PathogenIQ result interpretable.** Each control
+below unlocks a specific pipeline feature. Numbers are starting points; the
+true-positive thresholds and spike dose MUST be titrated on the lab's own
+reagents/sampler (a real workflow needs the calibration knob, not just defaults).
+
+### Controls matrix — what to run and why
+
+| Control | What it is | How many | Unlocks in PathogenIQ |
+|---------|------------|----------|-----------------------|
+| **Batch-matched NTC** (extraction blank) | Buffer/water through the *entire* extraction + library + sequencing protocol, same reagent lot, same run | **≥1 per extraction batch/run — mandatory** | Tier 1 → the *only* path to **Grade A**. Feeds `--ntc` for this batch's NB background |
+| **Field / collection blank** | A sterile filter/cassette opened at the sampling site but not actively sampling, then processed identically | **≥1 per sampling session** | Separates *sampling/transport* contamination from *reagent* kitome; without it, field contaminants masquerade as real air taxa |
+| **No-template library control** | Water into library prep only (no extraction) | 1 per library batch | Isolates library/index contamination + index hopping from extraction kitome |
+| **Pooled-background NTCs** | The accumulating set used to build `background_default.tsv` | **≥8–12 across reagent lots**, then add each new batch NTC over time | The Tier-2 default. Dispersion study: *coverage* is the limit → more NTCs, spanning lots, is what lowers the false-positive floor |
+| **Internal spike-in** (absolute quant) | Whole cells absent from air/clinical — **ZymoBIOMICS Spike-in Control I/II** (*Imtechella halochordis* + *Allobacillus halotolerans*), added **before extraction** | **Every sample** (it is the per-sample ruler) | Absolute load (copies/m³ air) + extraction-recovery normalization (Plan 6 #2). Add the spike genomes to the Tier-1 DB |
+| **Positive process control** | **ZymoBIOMICS D6300** mock community spiked onto a blank matrix (à la Jeilu et al.) | **1–3 per batch** | End-to-end sensitivity + abundance-accuracy check; the integration-test analogue for the air domain |
+| **Technical replicates** | Same sample split/extracted ≥2× | **2–3 per sample** at low biomass | Distinguishes stochastic single-read contamination from reproducible real signal (grading already de-weights singletons via `min_reads`) |
+
+### Spike-in dose (the part people get wrong)
+
+- **Target the spike at ~0.5–5% of total reads.** Too little → noisy denominator;
+  too much → it swamps the tiny real air signal and wastes depth. Low-biomass air
+  sits at the dangerous end — start LOW and titrate.
+- **Quantify the exact input by ddPCR/qPCR** (don't trust the nominal tube conc).
+  Absolute load = `reads_target / reads_spike × spike_copies_added / air_volume`.
+- **Add before lysis/extraction** so the spike experiences the same extraction
+  bias as the sample (Gram± lyse differently) — DNA-only spikes miss this.
+
+### Sequencing / sampling notes
+
+- **qPCR (16S) pre-check** each sample before sequencing — confirm any microbial
+  DNA is present and gate samples below the limit of detection.
+- **Low-input library prep** + extra PCR cycles; **1–2% PhiX** sequencing spike
+  (also satisfies Plan 6 #1 PhiX removal). Budget depth for the spike + kitome
+  fraction so the real signal still gets enough reads.
+- **Sampling captures biomass:** HEPA/cabin filters integrate over thousands of
+  hours (high biomass, time-averaged); active samplers (impinger/cyclone/filter)
+  are short-term/low-biomass — record air volume sampled for the per-m³ denominator.
+- **Optional BHI enrichment arm** (Plan 6 #4) to rescue biomass — run it ALONGSIDE
+  the direct/environmental arm, never as a replacement (culture bias → Firmicutes).
+
+### Minimum viable run (smallest design that still grades meaningfully)
+
+Per batch: **1 extraction NTC + 1 field blank + internal spike in every sample +
+1 Zymo positive control + duplicate the real samples.** That single batch NTC
+enables Grade A (Tier 1); the spike gives absolute load; the field blank +
+background separate air signal from contamination; the Zymo control proves the
+workflow detects what it should.
