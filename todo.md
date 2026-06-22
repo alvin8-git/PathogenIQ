@@ -292,3 +292,37 @@ content captured below.
    for cross-run RPM comparability.
 
 Not scoped yet — parked for a future session.
+
+---
+
+## Plan 6 — Incorporations from Jeilu et al. 2025 (aircraft air metagenomics)
+
+Source: Jeilu et al. 2025, *Microbiome* 13:249 (doi:10.1186/s40168-025-02276-7),
+PDF in `databases/CAMI/`. Their pipeline: KneadData QC → MetaPhlAn4 + HUMAnN3 +
+StrainPhlAn (read-based) **and** MEGAHIT → MetaBAT2 → CheckM → GTDB-Tk → Prokka →
+Abricate/CARD (assembly-based), with BHI **enrichment** culture, **qPCR + synthetic
+spike-in** recovery normalization, and diversity/ordination stats.
+
+**Key contrast (validates our design):** their shotgun profiling does NOT
+statistically subtract a kitome background — they report raw MetaPhlAn profiles
+and their top taxa (C. acnes, S. epidermidis) are exactly the skin/kit
+contaminants our NTC background + contaminant priors + grading are built to flag.
+Our NTC-aware grading, bootstrap CIs, and cross-map dedup are rigor their analysis
+lacks. We are weaker on assembly, functional profiling, strain ID, and absolute
+quantification — the gaps below.
+
+| # | Incorporation | Value | Relevance | Effort |
+|---|---------------|-------|-----------|--------|
+| 1 | **PhiX removal in QC** — they strip the PhiX sequencing spike (KneadData); we only remove human host. Add a PhiX decoy to host removal. | High | All samples | Low |
+| 2 | **Spike-in recovery normalization / absolute quantification** — synthetic DNA spike at known copies → recovery efficiency → absolute load (not just RPM). Enables cross-run/cross-site comparability + pathogen load. (Supersedes the parked "ERCC/Zymo scaling" note.) | High | Clinical load + air surveillance | Med |
+| 3 | **Optional assembly + MAG stage** — MEGAHIT → MetaBAT2 → CheckM (≥50%/≤10%) → GTDB-Tk → Prokka. Recovers novel/divergent/uncultured organisms read-based profiling misses, and links ARGs to a genome. Air has many unknown environmental taxa. | High | Air surveillance (novel orgs) | High |
+| 4 | **Enrichment (BHI culture) as a documented low-biomass wet-lab option** — boosts DNA yield, MAG + ARG recovery; cost = culture bias toward Firmicutes. Not pipeline code — a sample-prep SOP for Plan 5 air NTC/spike runs. | Med | Air (very low biomass) | Low (doc) |
+| 5 | **Strain-level resolution** — StrainPhlAn-style reference strain tracking; complements the parked MLST (Plan 3C). Outbreak / source attribution. | Med | Clinical + surveillance | Med |
+| 6 | **Virulence-factor screen** — run Abricate against VFDB alongside CARD (our `--amr-db` already accepts `vfdb`); report virulence genes next to AMR. | Med | Pathogen interpretation | Low |
+| 7 | **Multi-sample diversity + ordination** — alpha (Shannon), beta (Bray-Curtis/UniFrac), PCoA, PERMANOVA across samples/sites/time for a surveillance dashboard. | Med | Air surveillance (fleets/time) | Med |
+| 8 | **GTDB taxonomy option** — GTDB-Tk gives consistent genome-based names for environmental taxa NCBI lacks; offer as an alt to NCBI taxids for air. | Low | Air | Med |
+| 9 | **Overrepresented-sequence removal** (FastQC flag) in QC — minor extra contaminant trim they apply. | Low | All | Low |
+
+**Suggested order:** #1 (PhiX, quick correctness) → #6 (VFDB, near-free) →
+#2 (spike-in absolute quant) → #3 (assembly/MAG, the big surveillance unlock,
+pairs with the PRJNA1228129 air data) → the rest as surveillance scope grows.
