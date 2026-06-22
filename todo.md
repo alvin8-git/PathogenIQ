@@ -203,30 +203,40 @@ to it, the single-NTC (Tier 2) path's controlled-α guarantee is hollow.
 **Depends on:** the multi-community truth set (the P1 data-acquisition task for the benchmark).
 Cannot run until labeled data exists.
 
-### T10 — Benchmark (CORE BUILT; full run blocked on data)
+### T10 — Benchmark (DONE — validated across 9 held-out communities)
 
-**Built + tested:** `pathogeniq/benchmark.py` (Kraken2 report parser,
-kraken_to_grading_inputs adapter with a Wilson-CI stand-in for the bootstrap,
-and PR scoring: average_precision / precision_at_recall) + `scripts/06_benchmark.py`
-(kraken-raw vs kraken+grading on a Kraken2 report vs a truth-taxid set).
-Smoke-tested on synthetic data.
+**Built + tested:** `pathogeniq/benchmark.py` (Kraken2 parser, grading adapter
+with a Wilson-CI bootstrap stand-in, CAMI-profile + reads_mapping truth loaders,
+PR scoring) + `scripts/06_benchmark.py` (single community) + `08_heldout_pr_auc.py`
+(multi-community held-out, per-row rank) + `07_build_kraken_db.py` +
+`09_reads_mapping_truth.py` (reads_mapping -> truth at a chosen rank).
 
-**Metric finding (baked into the harness output):** grading's value is
-false-positive removal, which moves *operating-point precision*; PR-AUC stays
-flat when those FPs are already bottom-ranked by read count. Report both deltas.
+**Result (`docs/benchmark-results-2026-06-21.md`):** floor=500 calibrated ONCE
+on 3 Zymo runs (F1) then applied to all held-out communities — none seen in
+calibration, spanning two taxonomic ranks:
+- **CAMI species panel** (gut/marine/strain): mean precision 0.011 -> 0.494 (45x)
+  at recall 0.684. Strain-madness weakest (0.326) — near-identical-strain
+  cross-mapping, the Plan-3D case.
+- **HMP genus panel** (skin/airway/oral): mean precision 0.008 -> 0.352 (44x) at
+  recall 0.952. Scored at genus rank because the 97%-OTU truth resolves only to
+  genus; kept a separate panel (mixing ranks in one mean is apples-to-oranges).
 
-**Blockers for the real run:**
-- Kraken2 DB + run on CAMI/Zymo reads to produce `.kreport` files (CAMI reads
-  are portal-gated at data.cami-challenge.org; Zymo reads are on disk).
-- Truth taxid lists from the CAMI gold-standard profiles / known Zymo composition.
-- taxid<->GCF map so the NB background filter (GCF-keyed) can join Kraken taxids
-  (or rebuild the kitome background through Kraken2, taxid-keyed).
-- A CZID-export parser for the third config.
-- Held-out split once there are >=3-5 labeled communities (one Zymo can't anchor
-  a PR curve — outside-voice c).
+The grading wedge is community- and rank-agnostic, not Zymo-overfit.
 
-**Where to start:** sweep the dispersion prior over a plausible range, measure FPR at fixed α
-on the held-out split, report sensitivity.
+**Metric finding (baked into the harness):** grading's value is FP removal, which
+moves operating-point precision; PR-AUC stays flat when those FPs are already
+bottom-ranked by read count. Both deltas reported.
+
+**Known net-negative:** the Salter kitome NB background over-suppresses real
+Enterobacteriaceae (drops recall) — do NOT auto-apply; needs Plan-4 + non-spiked
+blanks (below). Cross-map dedup IS a clean precision win (zero recall cost).
+
+**Still open (not blockers, enhancements):**
+- CZID-export parser for a third external-baseline config.
+- taxid<->GCF map so the GCF-keyed NB background can join Kraken taxids (or
+  rebuild the kitome background taxid-keyed through Kraken2).
+- Plan-4: sweep the dispersion prior, measure FPR at fixed α on the held-out
+  split, report sensitivity — the path to making the background a net positive.
 
 ---
 
