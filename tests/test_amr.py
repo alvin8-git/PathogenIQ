@@ -6,6 +6,7 @@ from pathogeniq.amr import (
     _fastq_to_fasta,
     _parse_abricate_tsv,
     run_amr_screen,
+    run_virulence_screen,
 )
 from pathogeniq.config import PipelineConfig, ReadType, SpecimenType
 
@@ -103,3 +104,33 @@ def test_run_amr_screen_with_mock_abricate(tmp_path):
 
     assert len(hits) == 1
     assert hits[0].gene == "mecA"
+
+
+def test_run_virulence_screen_with_mock_vfdb(tmp_path):
+    cfg = _cfg(tmp_path)
+    reads = tmp_path / "reads.fq"
+    reads.write_text("@r1\nACGT\n+\nAAAA\n")
+    # VFDB hit: the factor lives in PRODUCT; RESISTANCE is empty for virulence
+    tsv_output = (
+        "#FILE\tSEQUENCE\tSTART\tEND\tGENE\tCOVERAGE\tGAPS\t%COVERAGE\t%IDENTITY\t"
+        "DATABASE\tACCESSION\tPRODUCT\tRESISTANCE\n"
+        "amr_reads.fa\tStaphylococcus_aureus_r1\t1\t100\thlb\t1-100/100\t0\t100\t97.0\t"
+        "vfdb\tVFG001\tbeta-hemolysin\t\n"
+    )
+    with patch("pathogeniq.amr.shutil.which", return_value="/usr/bin/abricate"), \
+         patch("pathogeniq.amr.subprocess.run",
+               return_value=type("obj", (object,), {"returncode": 0, "stdout": tsv_output})()):
+        hits = run_virulence_screen(cfg, reads, organism_names=["Staphylococcus aureus"])
+    assert len(hits) == 1
+    assert hits[0].gene == "hlb"
+    assert hits[0].factor == "beta-hemolysin"      # PRODUCT, not RESISTANCE
+    assert hits[0].organism_match == "Staphylococcus aureus"
+    assert hits[0].database == "vfdb"
+
+
+def test_run_virulence_screen_skips_when_abricate_missing(tmp_path):
+    cfg = _cfg(tmp_path)
+    reads = tmp_path / "reads.fq"
+    reads.write_text("@r1\nACGT\n+\nAAAA\n")
+    with patch("pathogeniq.amr.shutil.which", return_value=None):
+        assert run_virulence_screen(cfg, reads, organism_names=["E. coli"]) == []

@@ -2,7 +2,7 @@ import click
 from dataclasses import replace
 from pathlib import Path
 
-from .amr import run_amr_screen
+from .amr import run_amr_screen, run_virulence_screen
 from .background import (
     build_background,
     load_background_table,
@@ -85,12 +85,15 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     em_result = em_abundance(align_result.alignment_matrix)
     ci_lower, ci_upper = bootstrap_ci(align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap)
 
-    click.echo("[5/6] AMR screening...")
+    click.echo("[5/6] AMR & virulence screening...")
     amr_hits = run_amr_screen(cfg, nonhuman, organism_names=align_result.organism_names, db=cfg.amr_db)
     if amr_hits:
         click.echo(f"      {len(amr_hits)} AMR gene(s) detected")
     else:
         click.echo("      No AMR genes detected (or abricate not installed)")
+    virulence_hits = run_virulence_screen(cfg, nonhuman, organism_names=align_result.organism_names)
+    if virulence_hits:
+        click.echo(f"      {len(virulence_hits)} virulence factor(s) detected (VFDB)")
 
     click.echo("[6/6] Background correction & report...")
     background = _resolve_background(cfg, ntc_fastq, background_table, no_background)
@@ -106,14 +109,15 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     if removed:
         click.echo(f"      {removed} taxon(s) removed as background")
 
-    report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits)
+    report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits, virulence_hits=virulence_hits)
 
     if not no_pdf:
-        pdf_path = write_pdf_report(cfg, entries, amr_hits)
+        pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
         click.echo(f"PDF report:        {pdf_path}")
 
     html_path = write_html_report(
-        cfg, qc_metrics, hr_metrics, hits, entries, em_result, amr_hits=amr_hits,
+        cfg, qc_metrics, hr_metrics, hits, entries, em_result,
+        amr_hits=amr_hits, virulence_hits=virulence_hits,
     )
     click.echo(f"HTML report:       {html_path}")
 

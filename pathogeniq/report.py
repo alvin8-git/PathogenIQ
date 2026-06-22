@@ -170,6 +170,7 @@ def write_report(
     entries: list[ReportEntry],
     em_result: EMResult,
     amr_hits: list | None = None,
+    virulence_hits: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -181,6 +182,15 @@ def write_report(
         amr_by_org.setdefault(hit.organism_match, []).append({
             "gene": hit.gene,
             "drug_class": hit.drug_class,
+            "identity_pct": hit.identity_pct,
+            "coverage_pct": hit.coverage_pct,
+        })
+
+    vir_by_org: dict[str, list[dict]] = {}
+    for hit in (virulence_hits or []):
+        vir_by_org.setdefault(hit.organism_match, []).append({
+            "gene": hit.gene,
+            "factor": hit.factor,
             "identity_pct": hit.identity_pct,
             "coverage_pct": hit.coverage_pct,
         })
@@ -230,6 +240,7 @@ def write_report(
                 "invalid_stats": e.invalid_stats,
                 "crossmap_of": e.crossmap_of,
                 "amr_genes": amr_by_org.get(e.organism, []),
+                "virulence_factors": vir_by_org.get(e.organism, []),
             }
             for e in entries
         ],

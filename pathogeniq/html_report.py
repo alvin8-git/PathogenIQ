@@ -96,6 +96,7 @@ def write_html_report(
     entries: list[ReportEntry],
     em_result: EMResult,
     amr_hits: list[AMRHit] | None = None,
+    virulence_hits: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -265,6 +266,30 @@ def write_html_report(
 <div class="card">
   <div class="card-title">Antimicrobial Resistance Genes</div>
   {amr_html}
+</div>
+"""
+
+    # ── Virulence Card (VFDB) ─────────────────────────────────────────────
+    if virulence_hits:
+        vir_rows = "".join(
+            f"<tr><td>{h.gene}</td><td>{h.factor}</td>"
+            f"<td>{h.identity_pct:.1f}%</td><td>{h.coverage_pct:.1f}%</td>"
+            f"<td><em>{h.organism_match}</em></td><td>{h.database}</td></tr>"
+            for h in virulence_hits
+        )
+        vir_html = f"""<table>
+  <thead><tr>
+    <th>Gene</th><th>Virulence Factor</th><th>Identity</th><th>Coverage</th><th>Organism</th><th>Database</th>
+  </tr></thead>
+  <tbody>{vir_rows}</tbody>
+</table>"""
+    else:
+        vir_html = '<p class="no-data">No virulence factors detected (VFDB not run or no hits above threshold).</p>'
+
+    html += f"""
+<div class="card">
+  <div class="card-title">Virulence Factors (VFDB)</div>
+  {vir_html}
 </div>
 """
 

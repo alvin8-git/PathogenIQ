@@ -32,6 +32,7 @@ def write_pdf_report(
     cfg: PipelineConfig,
     entries: list[ReportEntry],
     amr_hits: list[AMRHit],
+    virulence_hits: list | None = None,
 ) -> Path:
     """Render a single-page clinical PDF report."""
     out = cfg.output_dir / "report"
@@ -141,6 +142,34 @@ def write_pdf_report(
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.append(amr_table)
+
+    # Virulence factor table (VFDB)
+    if virulence_hits:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Virulence Factors (VFDB)", heading2_style))
+        vir_data = [["Gene", "Virulence Factor", "Identity (%)", "Coverage (%)", "Organism Match"]]
+        for h in virulence_hits:
+            vir_data.append([
+                h.gene,
+                h.factor,
+                f"{h.identity_pct:.1f}",
+                f"{h.coverage_pct:.1f}",
+                h.organism_match,
+            ])
+        vir_table = Table(vir_data, repeatRows=1)
+        vir_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(vir_table)
 
     # Footer
     story.append(Spacer(1, 18))
