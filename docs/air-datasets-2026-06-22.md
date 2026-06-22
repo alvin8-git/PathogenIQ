@@ -19,7 +19,9 @@ Filereport URL (swap `ACCESSION`):
 | 4 | **PRJNA791118** | Lower-troposphere air, vertical stratification | 234 WGS Illumina | ~2.7M reads/run | ~94 GB | none surfaced |
 | 5 | **PRJNA638794** | Air-sampling **method optimization** (low-biomass) | 98 WGS (+13 amplicon) | Illumina | ~48 GB | filter `library_strategy=WGS` |
 
-**Best starting point: PRJNA1228129** — small, clean, and the only one with *both* negative controls and positive spike-ins, so it exercises background subtraction (controls) and detection sensitivity (spikes) in one dataset.
+**Best starting point: PRJNA1228129** — small, clean, and the only one with *both* negative controls and positive spike-ins, so it exercises background subtraction (controls) and detection sensitivity (spikes) in one dataset. Total ~42 GB (55 runs, 309M reads); the controls + spike-ins alone are only ~8 GB.
+
+> **Reference:** Jeilu O, Sumner JT, Moghadam AA, Thompson KN, Huttenhower C, et al. (2025). *Metagenomic profiling of airborne microbial communities from aircraft filters and face masks.* **Microbiome.** doi:10.1186/s40168-025-02276-7 (PMID 41340070; medRxiv preprint doi:10.1101/2025.02.26.25322977). SRA study SRP566804.
 
 ## Supplementary verified Illumina shotgun air (taxid 655179)
 
