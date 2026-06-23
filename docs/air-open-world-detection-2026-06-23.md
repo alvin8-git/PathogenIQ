@@ -31,6 +31,18 @@ and air is disproportionately **viral**. This is the requirements map and status
   it metatranscriptome contigs and it classifies RNA viruses too; the capture is a
   wet-lab (DNA vs RNA extraction) decision, recorded in the wet-lab section of `todo.md`.
 
+## Validating the viral arm (R2)
+
+Our air data can't validate it (DNA-seq → no RNA viruses; Zymo D6300 has no viral
+members; filters carry unlabelled phage only). `scripts/12_viral_insilico_spikein.py`
+generates gold truth instead: simulate reads (wgsim) from known viral genomes
+(T4 + Lambda phage, SARS-CoV-2) → optionally mix into a real aircraft-filter
+background → megahit → `run_viral_stage` → score geNomad recall (correct ICTV
+lineage) + CheckV completeness vs truth. Scoring logic is offline-verifiable
+(`--selfcheck`); the full run needs wgsim + megahit + geNomad + CheckV (+ DBs).
+This validates the *bioinformatic* arm; end-to-end air-virus capability still needs
+real RNA-seq air virome (a wet-lab decision).
+
 ## JSON additions
 
 - `novelty`: `{total_reads, classified_reads, unclassified_reads, unclassified_fraction, n_species, top_taxa[], flagged}`
