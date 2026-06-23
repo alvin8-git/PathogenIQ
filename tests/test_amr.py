@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 
 from pathogeniq.amr import (
-    _fastq_to_fasta,
     _parse_abricate_tsv,
+    _run_abricate,
     run_amr_screen,
     run_virulence_screen,
 )
@@ -22,26 +22,19 @@ def _cfg(tmp_path: Path) -> PipelineConfig:
     )
 
 
-def test_fastq_to_fasta_handles_gzip_and_stray_bytes(tmp_path):
-    # regression: the pipeline hands AMR the gzipped non-host reads, and a stray
-    # non-ASCII byte must not abort the run (it crashed the whole pipeline before).
-    import gzip
-    fq = tmp_path / "reads.fq.gz"
-    with gzip.open(fq, "wb") as f:
-        f.write(b"@read1\nACGT\xcdACGT\n+\nIIIIIIII\n@read2\nTTTT\n+\nIIII\n")
-    fa = tmp_path / "out.fa"
-    _fastq_to_fasta(fq, fa)
-    text = fa.read_text()
-    assert ">read1" in text and ">read2" in text   # both reads survived
-    assert "TTTT" in text
+def test_run_abricate_skips_without_contigs(tmp_path):
+    # no contigs (assembly produced nothing) -> screen skips, even if abricate exists
+    with patch("pathogeniq.amr.shutil.which", return_value="abricate"):
+        assert _run_abricate(_cfg(tmp_path), None, "card", 90.0, 80.0) is None
 
 
 def test_run_abricate_is_non_blocking_on_error(tmp_path):
-    # abricate present but the input read fails -> screen skips (None), run survives.
-    from pathogeniq.amr import _run_abricate
+    # abricate present, contigs present, but the subprocess fails -> None (run survives)
+    contigs = tmp_path / "contigs.fa"
+    contigs.write_text(">k1\nACGT\n")
     with patch("pathogeniq.amr.shutil.which", return_value="abricate"), \
-         patch("pathogeniq.amr._fastq_to_fasta", side_effect=OSError("boom")):
-        assert _run_abricate(_cfg(tmp_path), tmp_path / "x.fq.gz", "card", 90.0, 80.0) is None
+         patch("pathogeniq.amr.subprocess.run", side_effect=OSError("boom")):
+        assert _run_abricate(_cfg(tmp_path), contigs, "card", 90.0, 80.0) is None
 
 
 def test_parse_abricate_tsv_basic():
@@ -93,16 +86,6 @@ def test_run_amr_screen_skips_when_abricate_missing(tmp_path):
     with patch("pathogeniq.amr.shutil.which", return_value=None):
         hits = run_amr_screen(cfg, reads, organism_names=["E. coli"])
     assert hits == []
-
-
-def test_fastq_to_fasta_conversion(tmp_path):
-    fq = tmp_path / "reads.fq"
-    fa = tmp_path / "reads.fa"
-    fq.write_text("@read1\nACGTACGT\n+\nIIIIIIII\n@read2\nTGCATGCA\n+\nIIIIIIII\n")
-    _fastq_to_fasta(fq, fa)
-    content = fa.read_text()
-    assert ">read1\nACGTACGT\n" in content
-    assert ">read2\nTGCATGCA\n" in content
 
 
 def test_run_amr_screen_with_mock_abricate(tmp_path):

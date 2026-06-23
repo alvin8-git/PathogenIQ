@@ -108,6 +108,7 @@ def test_cli_run_invokes_pipeline(tmp_path):
          patch("pathogeniq.cli.run_targeted_alignment") as mock_align, \
          patch("pathogeniq.cli.em_abundance") as mock_em, \
          patch("pathogeniq.cli.bootstrap_ci") as mock_ci, \
+         patch("pathogeniq.cli.run_megahit", return_value=None), \
          patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
          patch("pathogeniq.cli.run_virulence_screen", return_value=[]), \
          patch("pathogeniq.cli.write_report") as mock_report, \
@@ -167,6 +168,7 @@ def test_cli_run_produces_pdf(tmp_path):
          patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
          patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
          patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
+         patch("pathogeniq.cli.run_megahit", return_value=None), \
          patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
          patch("pathogeniq.cli.run_virulence_screen", return_value=[]), \
          patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
@@ -216,6 +218,7 @@ def test_cli_run_no_pdf_flag(tmp_path):
          patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
          patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
          patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
+         patch("pathogeniq.cli.run_megahit", return_value=None), \
          patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
          patch("pathogeniq.cli.run_virulence_screen", return_value=[]), \
          patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \

@@ -108,11 +108,11 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                        + (" — FLAGGED: novel/uncatalogued content, consider --assemble"
                           if novelty.flagged else ""))
 
-    def _discovery_arms():
+    def _discovery_arms(contigs=None):
         """Open-world arms (assembly MAGs + viral) on the non-host reads. Run
         regardless of targeted hits so novel/viral content with no DB match is
-        still recovered. ponytail: --assemble and --viral each assemble; the
-        double megahit when both are set is acceptable (both opt-in and slow)."""
+        still recovered. ``contigs`` (the shared megahit assembly used for AMR) is
+        reused for the viral arm to avoid re-assembling."""
         m = v = None
         if assemble:
             click.echo("      De novo assembly + MAG recovery (this is slow)...")
@@ -121,7 +121,8 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                        "      No MAGs recovered (assembly tools/DBs missing or no bins)")
         if viral_flag:
             click.echo("      Viral identification arm (geNomad + CheckV)...")
-            contigs = run_megahit(cfg, nonhuman)
+            if contigs is None:
+                contigs = run_megahit(cfg, nonhuman)
             v = run_viral_stage(cfg, contigs) if contigs is not None else []
             click.echo(f"      {len(v)} viral contig(s) identified" if v else
                        "      No viral contigs (geNomad/DBs missing or none found)")
@@ -158,12 +159,17 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     ci_lower, ci_upper = bootstrap_ci(align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap)
 
     click.echo("[5/6] AMR & virulence screening...")
-    amr_hits = run_amr_screen(cfg, nonhuman, organism_names=align_result.organism_names, db=cfg.amr_db)
+    # Assemble once: AMR/virulence (and the viral arm) screen the contigs, not the
+    # millions of raw reads — abricate-on-reads was the pipeline's slowest stage.
+    contigs = run_megahit(cfg, nonhuman)
+    if contigs is None:
+        click.echo("      Assembly unavailable (megahit missing) — AMR/virulence skipped")
+    amr_hits = run_amr_screen(cfg, contigs, organism_names=align_result.organism_names, db=cfg.amr_db)
     if amr_hits:
         click.echo(f"      {len(amr_hits)} AMR gene(s) detected")
     else:
-        click.echo("      No AMR genes detected (or abricate not installed)")
-    virulence_hits = run_virulence_screen(cfg, nonhuman, organism_names=align_result.organism_names)
+        click.echo("      No AMR genes detected (or abricate/assembly not available)")
+    virulence_hits = run_virulence_screen(cfg, contigs, organism_names=align_result.organism_names)
     if virulence_hits:
         click.echo(f"      {len(virulence_hits)} virulence factor(s) detected (VFDB)")
 
@@ -195,7 +201,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"      WARNING: spike {spike_taxon} not detected — "
                        f"absolute quantification unavailable (check spike input)")
 
-    mags, viral, triage = _discovery_arms()
+    mags, viral, triage = _discovery_arms(contigs)
 
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
                               virulence_hits=virulence_hits, spike_info=spike_info, mags=mags,

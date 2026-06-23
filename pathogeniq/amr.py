@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import gzip
 import io
 import shutil
 import subprocess
@@ -29,25 +28,6 @@ class VirulenceHit:
     coverage_pct: float
     organism_match: str  # matched organism name or "unknown"
     database: str
-
-
-def _fastq_to_fasta(fastq_path: Path, fasta_path: Path) -> None:
-    """Convert FASTQ to FASTA for ABRicate input.
-
-    Handles gzipped input (the pipeline hands AMR the gzipped non-host reads) and
-    decodes leniently (``errors="replace"``) so a stray non-ASCII byte degrades a
-    single base rather than aborting the whole run."""
-    opener = gzip.open if str(fastq_path).endswith(".gz") else open
-    with opener(fastq_path, "rt", encoding="ascii", errors="replace") as fq, \
-            open(fasta_path, "w") as fa:
-        while True:
-            header = fq.readline()
-            if not header:
-                break
-            seq = fq.readline().strip()
-            fq.readline()  # +
-            fq.readline()  # quality
-            fa.write(f">{header.lstrip('@').strip()}\n{seq}\n")
 
 
 def _match_organism(sequence: str, organism_names: list[str]) -> str:
@@ -81,53 +61,54 @@ def _parse_abricate_tsv(tsv_text: str, organism_names: list[str]) -> list[AMRHit
 
 
 def _run_abricate(
-    cfg: PipelineConfig, reads_path: Path, db: str, min_identity: float, min_coverage: float,
+    cfg: PipelineConfig, contigs: Path | None, db: str, min_identity: float, min_coverage: float,
 ) -> str | None:
-    """Convert reads to FASTA and run ABRicate against ``db``. Returns the TSV
-    stdout, or None if ABRicate is not on PATH or the run failed (non-blocking)."""
-    if not shutil.which("abricate"):
+    """Run ABRicate against ``db`` on an assembled-contig FASTA. Returns the TSV
+    stdout, or None if there are no contigs, abricate is absent, or the run fails.
+
+    Contigs (not raw reads) are the right input: ABRicate is a BLAST-over-assembly
+    tool. Screening ~tens of thousands of contigs instead of millions of reads is
+    ~100x less work and yields clean full-length gene hits rather than fragmented
+    per-read partials. Non-blocking — any failure skips the overlay."""
+    if contigs is None or not shutil.which("abricate"):
         return None
-    # Non-blocking: any failure (bad input, IO, abricate crash) skips the screen
-    # rather than aborting the pipeline — AMR/virulence is an overlay, not core.
     try:
-        fasta_path = cfg.output_dir / "amr_reads.fa"
-        _fastq_to_fasta(reads_path, fasta_path)
         result = subprocess.run(
             ["abricate", "--db", db, "--minid", str(min_identity),
-             "--mincov", str(min_coverage), str(fasta_path)],
+             "--mincov", str(min_coverage), str(contigs)],
             capture_output=True, encoding="utf-8", errors="replace",
         )
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
 
 
 def run_amr_screen(
     cfg: PipelineConfig,
-    reads_path: Path,
+    contigs: Path | None,
     organism_names: list[str],
     db: str = "card",
     min_identity: float = 90.0,
     min_coverage: float = 80.0,
 ) -> list[AMRHit]:
-    """Run ABRicate (default CARD) for resistance genes. Empty list if ABRicate
-    not on PATH (non-blocking)."""
-    tsv = _run_abricate(cfg, reads_path, db, min_identity, min_coverage)
+    """Run ABRicate (default CARD) for resistance genes on assembled ``contigs``.
+    Empty list if there are no contigs or ABRicate is absent (non-blocking)."""
+    tsv = _run_abricate(cfg, contigs, db, min_identity, min_coverage)
     return _parse_abricate_tsv(tsv, organism_names) if tsv is not None else []
 
 
 def run_virulence_screen(
     cfg: PipelineConfig,
-    reads_path: Path,
+    contigs: Path | None,
     organism_names: list[str],
     db: str = "vfdb",
     min_identity: float = 90.0,
     min_coverage: float = 80.0,
 ) -> list[VirulenceHit]:
-    """Run ABRicate against VFDB (virulence factor database) alongside the AMR
-    screen. Same machinery as run_amr_screen, but keeps the PRODUCT column (the
-    virulence factor description) rather than RESISTANCE. Non-blocking."""
-    tsv = _run_abricate(cfg, reads_path, db, min_identity, min_coverage)
+    """Run ABRicate against VFDB (virulence factor database) on assembled ``contigs``,
+    alongside the AMR screen. Same machinery as run_amr_screen, but keeps the PRODUCT
+    column (the virulence factor description) rather than RESISTANCE. Non-blocking."""
+    tsv = _run_abricate(cfg, contigs, db, min_identity, min_coverage)
     if tsv is None:
         return []
     hits: list[VirulenceHit] = []
