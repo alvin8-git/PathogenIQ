@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import shutil
 import subprocess
@@ -31,16 +32,22 @@ class VirulenceHit:
 
 
 def _fastq_to_fasta(fastq_path: Path, fasta_path: Path) -> None:
-    """Convert FASTQ to FASTA for ABRicate input."""
-    with open(fastq_path, "rb") as fq, open(fasta_path, "w") as fa:
+    """Convert FASTQ to FASTA for ABRicate input.
+
+    Handles gzipped input (the pipeline hands AMR the gzipped non-host reads) and
+    decodes leniently (``errors="replace"``) so a stray non-ASCII byte degrades a
+    single base rather than aborting the whole run."""
+    opener = gzip.open if str(fastq_path).endswith(".gz") else open
+    with opener(fastq_path, "rt", encoding="ascii", errors="replace") as fq, \
+            open(fasta_path, "w") as fa:
         while True:
             header = fq.readline()
             if not header:
                 break
-            seq = fq.readline().decode("ascii").strip()
+            seq = fq.readline().strip()
             fq.readline()  # +
             fq.readline()  # quality
-            fa.write(f">{header.decode('ascii').lstrip('@').strip()}\n{seq}\n")
+            fa.write(f">{header.lstrip('@').strip()}\n{seq}\n")
 
 
 def _match_organism(sequence: str, organism_names: list[str]) -> str:
@@ -80,13 +87,18 @@ def _run_abricate(
     stdout, or None if ABRicate is not on PATH or the run failed (non-blocking)."""
     if not shutil.which("abricate"):
         return None
-    fasta_path = cfg.output_dir / "amr_reads.fa"
-    _fastq_to_fasta(reads_path, fasta_path)
-    result = subprocess.run(
-        ["abricate", "--db", db, "--minid", str(min_identity),
-         "--mincov", str(min_coverage), str(fasta_path)],
-        capture_output=True, encoding="utf-8", errors="replace",
-    )
+    # Non-blocking: any failure (bad input, IO, abricate crash) skips the screen
+    # rather than aborting the pipeline — AMR/virulence is an overlay, not core.
+    try:
+        fasta_path = cfg.output_dir / "amr_reads.fa"
+        _fastq_to_fasta(reads_path, fasta_path)
+        result = subprocess.run(
+            ["abricate", "--db", db, "--minid", str(min_identity),
+             "--mincov", str(min_coverage), str(fasta_path)],
+            capture_output=True, encoding="utf-8", errors="replace",
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
     return result.stdout if result.returncode == 0 else None
 
 

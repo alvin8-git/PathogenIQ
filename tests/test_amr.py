@@ -22,6 +22,28 @@ def _cfg(tmp_path: Path) -> PipelineConfig:
     )
 
 
+def test_fastq_to_fasta_handles_gzip_and_stray_bytes(tmp_path):
+    # regression: the pipeline hands AMR the gzipped non-host reads, and a stray
+    # non-ASCII byte must not abort the run (it crashed the whole pipeline before).
+    import gzip
+    fq = tmp_path / "reads.fq.gz"
+    with gzip.open(fq, "wb") as f:
+        f.write(b"@read1\nACGT\xcdACGT\n+\nIIIIIIII\n@read2\nTTTT\n+\nIIII\n")
+    fa = tmp_path / "out.fa"
+    _fastq_to_fasta(fq, fa)
+    text = fa.read_text()
+    assert ">read1" in text and ">read2" in text   # both reads survived
+    assert "TTTT" in text
+
+
+def test_run_abricate_is_non_blocking_on_error(tmp_path):
+    # abricate present but the input read fails -> screen skips (None), run survives.
+    from pathogeniq.amr import _run_abricate
+    with patch("pathogeniq.amr.shutil.which", return_value="abricate"), \
+         patch("pathogeniq.amr._fastq_to_fasta", side_effect=OSError("boom")):
+        assert _run_abricate(_cfg(tmp_path), tmp_path / "x.fq.gz", "card", 90.0, 80.0) is None
+
+
 def test_parse_abricate_tsv_basic():
     tsv = (
         "#FILE\tSEQUENCE\tSTART\tEND\tGENE\tCOVERAGE\tGAPS\t%COVERAGE\t%IDENTITY\t"
