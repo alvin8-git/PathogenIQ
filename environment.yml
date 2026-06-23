@@ -26,12 +26,18 @@ dependencies:
   - metabat2       # binning (+ jgi_summarize_bam_contig_depths)
   - checkm-genome  # MAG completeness/contamination QC
   - gtdbtk         # MAG genome taxonomy
-  # --- optional: open-world novelty trigger (--novelty) + viral arm (--viral);
-  #     each needs its own DB ($KRAKEN2_DB/databases/kraken2 Standard build,
-  #     $GENOMAD_DB/databases/genomad_db, $CHECKV_DB/databases/checkv_db).
-  #     Stage skips gracefully if the tool or DB is absent. ---
-  - genomad        # viral identification + ICTV taxonomy
-  - checkv         # viral genome completeness/quality
+  # --- optional: open-world novelty trigger (--novelty); needs a broad Kraken2
+  #     DB ($KRAKEN2_DB or databases/kraken2 Standard build). Skips if absent. ---
+  #     kraken2 is already pinned above (benchmark tools).
+  #
+  # NOTE: the viral arm (--viral) tools geNomad + CheckV require numpy<2 and
+  # CONFLICT with this env's numpy-2.x stack (scipy/pandas). Install them in a
+  # SEPARATE env and symlink the CLIs in (they are external binaries, like
+  # abricate). See scripts/13_setup_viral_env.sh:
+  #     mamba create -n genomad -c conda-forge -c bioconda genomad checkv
+  #     conda run -n genomad genomad download-database databases   # -> databases/genomad_db
+  #     conda run -n genomad checkv  download_database databases    # -> databases/checkv_db
+  #     ln -sfn $CONDA/envs/genomad/bin/{genomad,checkv} $CONDA/envs/pathogeniq/bin/
   # --- Python runtime deps (mirror pyproject.toml) ---
   - click>=8.1
   - numpy>=1.26
