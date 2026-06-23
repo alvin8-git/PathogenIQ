@@ -10,7 +10,7 @@ and air is disproportionately **viral**. This is the requirements map and status
 | R1 | **Novelty trigger** (`novelty.py`) — Kraken2 vs a *broad* DB; report unclassified "dark-matter" fraction | Cheap gate: "is there something with no reference here?" | **built** (`--novelty`) |
 | R2 | **Viral arm** (`viral.py`) — geNomad (ID + ICTV taxonomy) → CheckV (completeness) on contigs | Air pathogens are viral-heavy; bacterial/MAG arms can't see them | **built** (`--viral`) |
 | R3 | **Novel-bacterial recovery** — assemble → MetaBAT2 → GTDB-Tk placement | Reference-free recovery of unknown bacteria | built (`--assemble`) |
-| R4 | **Pathogenicity triage** — contig-level VFDB/CARD + phylo-proximity-to-pathogen | Discriminator: novel *pathogen* vs novel benign environmental microbe | **next** |
+| R4 | **Pathogenicity triage** (`pathogenicity.py`) — MAG VFDB/CARD markers + GTDB phylo-proximity-to-pathogen | Discriminator: novel *pathogen* vs novel benign environmental microbe | **built** (in `--assemble`) |
 | R5 | **Open-world grading** — evidence tier for reference-free hits (breadth, completeness, hallmark/marker count, phylo-confidence) | Consistent A/B/C/X-equivalent for assembled/novel/viral hits | **next** |
 
 ## Design notes (R1, R2 — built 2026-06-23)
@@ -73,11 +73,34 @@ CLIs symlinked into the pathogeniq env (`scripts/13_setup_viral_env.sh`). DBs at
 - `novelty`: `{total_reads, classified_reads, unclassified_reads, unclassified_fraction, n_species, top_taxa[], flagged}`
 - `viral`: `[{contig_id, length, taxonomy, topology, virus_score, n_hallmarks, completeness, checkv_quality}]`
 
-## Next: R4 pathogenicity triage
+## R4 pathogenicity triage — built 2026-06-23
 
 The earlier air goal — "detect pathogens, not environmental organisms" — is R4.
-A novel contig/MAG matters as a *pathogen* only if it carries virulence (VFDB) /
-AMR (CARD) / toxin genes **or** sits phylogenetically adjacent to a known pathogen
-(e.g. a novel *Bacillus* near *B. anthracis*). Plan: run VFDB/CARD on contigs (not
-just reads) + a phylo-proximity score off the GTDB-Tk placement, feeding R5's
-open-world grade.
+`pathogenicity.py::triage_mags` assesses each recovered MAG on two signals:
+
+- **Markers** — abricate VFDB (virulence) + CARD (AMR) on the MAG's own contigs
+  (genome, not reads). Non-blocking (skips if abricate absent).
+- **Phylo-proximity** — the MAG's GTDB genus/species vs the known-pathogen set
+  derived from the tier-1 `name_map.json` (species match > genus match).
+
+Verdict (markers dominate — a novel genome with virulence/AMR genes is concerning
+regardless of taxonomy; lineage is the fallback since DBs miss genes):
+
+- `PATHOGEN_CANDIDATE` — carries ≥1 virulence/AMR marker
+- `PATHOGEN_ADJACENT` — no markers, but lineage matches a known pathogen genus/species
+- `ENVIRONMENTAL` — neither (e.g. *Sphingomonas*, *Methylobacterium* → correctly not flagged)
+
+`score = markers*2 + (3 if phylo else 0)`; JSON `pathogenicity` block; runs in the
+`--assemble` path. Pure scoring functions unit-tested. Feeds R5's open-world grade.
+
+ponytail ceilings: phylo match is genus/species name overlap, not true tree
+distance (GTDB-Tk gives the lineage; ANI-to-closest-pathogen would be tighter).
+Viral-contig pathogenicity (ARG-carrying phage — the paper cites these) is not yet
+triaged; R4 currently covers bacterial MAGs only.
+
+## Next: R5 open-world grading
+
+Unify how reference-free hits (MAGs, viral contigs, novel) are scored into a
+single evidence tier — breadth/depth of coverage, CheckM/CheckV completeness,
+marker count, phylo-confidence — so every open-world arm reports a consistent
+A/B/C/X-equivalent alongside the targeted findings.
