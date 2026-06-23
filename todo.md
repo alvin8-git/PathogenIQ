@@ -11,20 +11,21 @@ Recent arc = airborne-pathogen detection + open-world (novel) capability.
   `docs/air-concordance-validation-2026-06-22.md`). AIR specimen type added.
 - **Open-world arms:** R1 novelty trigger (`novelty.py`, `--novelty`); R2 viral arm
   (`viral.py`, `--viral`, geNomad+CheckV) — **validated 100% recall (3/3)** via the
-  in-silico spike-in harness (`scripts/12`). Viral tools isolated in a `genomad` env +
-  symlinks (`scripts/13`); DBs installed. See `docs/air-open-world-detection-2026-06-23.md`.
+  in-silico spike-in harness (`scripts/12`); R4 pathogenicity triage (`pathogenicity.py`)
+  — pathogen vs environmental discriminator (VFDB/CARD markers + GTDB phylo-proximity),
+  in the `--assemble` path. Viral tools isolated in a `genomad` env + symlinks
+  (`scripts/13`); DBs installed. See `docs/air-open-world-detection-2026-06-23.md`.
 - Bugs fixed: `run_megahit` parent-dir (was no-op'ing `--assemble` AND `--viral`);
-  numpy-2 vs geNomad env conflict (pipeline restored, 168 tests pass).
+  numpy-2 vs geNomad env conflict (pipeline restored; 177 tests pass).
 
 **Next (priority order):**
-1. **R4 pathogenicity triage** — contig-level VFDB/CARD + phylo-proximity-to-pathogen on
-   MAGs/contigs (the "pathogen vs environmental microbe" discriminator).
-2. **R5 open-world grading** — evidence tier for reference-free hits (breadth, completeness,
-   hallmark count, phylo-confidence).
-3. **Validate R1 novelty** — needs the Kraken2 Standard DB (~50 GB) installed.
-4. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
-   *Sphingomonas* / *Methylobacterium*.
-5. **Install abricate** — AMR + VFDB screens currently skip (not on PATH).
+1. **R5 open-world grading** — unify reference-free hits (MAGs/viral/novel) into one
+   evidence tier (breadth, completeness, marker count, phylo-confidence).
+2. **Validate R1 novelty** — needs the Kraken2 Standard DB (~50 GB) installed.
+3. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
+   *Sphingomonas* / *Methylobacterium*, and exercise R4 triage on real MAGs.
+4. **Install abricate** — AMR + VFDB screens (incl. R4 markers) currently skip (not on PATH).
+5. Viral-contig pathogenicity triage (ARG-carrying phage); R4 currently bacterial MAGs only.
 6. Plan 6 leftovers (#4 BHI enrichment SOP, #5 strain ID, #7 diversity, #8 GTDB, #9
    overrepresented-seq trim); Plan 3 leftovers (3A extract, 3B AMRFinderPlus, 3C MLST).
 
