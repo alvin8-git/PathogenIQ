@@ -187,6 +187,7 @@ def write_report(
     virulence_hits: list | None = None,
     spike_info=None,
     mags: list | None = None,
+    novelty=None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -291,6 +292,16 @@ def write_report(
             }
             for m in mags
         ]
+    if novelty is not None:
+        payload["novelty"] = {
+            "total_reads": novelty.total_reads,
+            "classified_reads": novelty.classified_reads,
+            "unclassified_reads": novelty.unclassified_reads,
+            "unclassified_fraction": round(novelty.unclassified_fraction, 4),
+            "n_species": novelty.n_species,
+            "top_taxa": [{"species": s, "reads": n} for s, n in novelty.top_taxa],
+            "flagged": novelty.flagged,
+        }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)
 

@@ -13,6 +13,7 @@ from .em import bootstrap_ci, em_abundance
 from .host_remove import run_host_removal, run_phix_removal
 from .quantify import quantify_entries
 from .assembly import run_assembly_stage
+from .novelty import assess_novelty
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -53,10 +54,14 @@ def cli():
 @click.option("--assemble", is_flag=True, default=False,
               help="Run the de novo assembly + MAG arm (MEGAHIT/MetaBAT2/CheckM/GTDB-Tk) to "
                    "recover novel organisms not in the reference DB (slow; tools/DBs required)")
+@click.option("--novelty", "novelty_flag", is_flag=True, default=False,
+              help="Open-world novelty trigger: classify reads against a broad Kraken2 DB and "
+                   "report the unclassified fraction (flags novel/uncatalogued content; "
+                   "needs kraken2 + a Standard DB at $KRAKEN2_DB or databases/kraken2)")
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
         threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
         ntc_fastq, background_table, no_background,
-        spike_taxon, spike_copies, sample_volume, assemble):
+        spike_taxon, spike_copies, sample_volume, assemble, novelty_flag):
     """Run the full PathogenIQ pipeline."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -84,12 +89,29 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     if n_phix:
         click.echo(f"      {n_phix:,} PhiX spike-in reads removed")
 
+    # Open-world novelty trigger runs on the non-host reads BEFORE the targeted
+    # arm, so a sample with no DB hit but novel content is still flagged.
+    novelty = None
+    if novelty_flag:
+        click.echo("      Open-world novelty screen (Kraken2, broad DB)...")
+        novelty = assess_novelty(cfg, nonhuman)
+        if novelty is None:
+            click.echo("      Novelty screen skipped (kraken2 or broad DB missing)")
+        else:
+            click.echo(f"      {novelty.unclassified_fraction:.1%} of reads unclassified"
+                       + (" — FLAGGED: novel/uncatalogued content, consider --assemble"
+                          if novelty.flagged else ""))
+
     click.echo("[3/6] Sketch screening...")
     hits = run_sketch_screen(cfg, nonhuman)
     click.echo(f"      {len(hits)} candidate organisms shortlisted")
 
     if not hits:
         click.echo("No pathogens detected above threshold.")
+        if novelty is not None and novelty.flagged:
+            click.echo(f"NOTE: {novelty.unclassified_fraction:.1%} of reads are unclassified "
+                       f"against the broad DB — possible novel organism. Run with --assemble "
+                       f"to recover and classify it.")
         return
 
     click.echo("[4/6] Targeted alignment + EM abundance...")
@@ -143,7 +165,8 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                    if mags else "      No MAGs recovered (assembly tools/DBs missing or no bins)")
 
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
-                              virulence_hits=virulence_hits, spike_info=spike_info, mags=mags)
+                              virulence_hits=virulence_hits, spike_info=spike_info, mags=mags,
+                              novelty=novelty)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
