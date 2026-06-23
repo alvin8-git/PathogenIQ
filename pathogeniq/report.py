@@ -189,6 +189,7 @@ def write_report(
     mags: list | None = None,
     novelty=None,
     viral: list | None = None,
+    pathogenicity: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -306,6 +307,21 @@ def write_report(
                 "checkv_quality": v.checkv_quality,
             }
             for v in viral
+        ]
+    if pathogenicity is not None:
+        payload["pathogenicity"] = [
+            {
+                "mag": a.name,
+                "taxonomy": a.taxonomy,
+                "verdict": a.verdict,
+                "score": a.score,
+                "n_virulence": a.n_virulence,
+                "n_amr": a.n_amr,
+                "phylo_match": a.phylo_match,
+                "virulence_genes": a.virulence_genes,
+                "amr_genes": a.amr_genes,
+            }
+            for a in pathogenicity
         ]
     if novelty is not None:
         payload["novelty"] = {

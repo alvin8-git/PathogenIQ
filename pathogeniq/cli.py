@@ -16,6 +16,7 @@ from .quantify import quantify_entries
 from .assembly import run_assembly_stage, run_megahit
 from .novelty import assess_novelty
 from .viral import run_viral_stage
+from .pathogenicity import triage_mags
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -124,7 +125,14 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             v = run_viral_stage(cfg, contigs) if contigs is not None else []
             click.echo(f"      {len(v)} viral contig(s) identified" if v else
                        "      No viral contigs (geNomad/DBs missing or none found)")
-        return m, v
+        # R4: triage recovered MAGs into pathogen vs environmental.
+        t = None
+        if m:
+            t = triage_mags(cfg, m)
+            n_path = sum(a.verdict != "ENVIRONMENTAL" for a in t)
+            click.echo(f"      Pathogenicity triage: {n_path}/{len(t)} MAG(s) flagged "
+                       f"pathogen-relevant (markers or pathogen-adjacent lineage)")
+        return m, v, t
 
     click.echo("[3/6] Sketch screening...")
     hits = run_sketch_screen(cfg, nonhuman)
@@ -136,10 +144,11 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"NOTE: {novelty.unclassified_fraction:.1%} of reads are unclassified "
                        f"against the broad DB — possible novel organism.")
         # The open-world arms can still recover novel/viral genomes with no DB hit.
-        mags, viral = _discovery_arms()
+        mags, viral, triage = _discovery_arms()
         if any(x is not None for x in (novelty, mags, viral)):
             empty_em = EMResult(abundances=np.array([]), n_reads=0, n_organisms=0, iterations=0)
-            report_dir = write_report(cfg, [], empty_em, novelty=novelty, mags=mags, viral=viral)
+            report_dir = write_report(cfg, [], empty_em, novelty=novelty, mags=mags,
+                                      viral=viral, pathogenicity=triage)
             click.echo(f"Report written to: {report_dir}")
         return
 
@@ -186,11 +195,11 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"      WARNING: spike {spike_taxon} not detected — "
                        f"absolute quantification unavailable (check spike input)")
 
-    mags, viral = _discovery_arms()
+    mags, viral, triage = _discovery_arms()
 
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
                               virulence_hits=virulence_hits, spike_info=spike_info, mags=mags,
-                              novelty=novelty, viral=viral)
+                              novelty=novelty, viral=viral, pathogenicity=triage)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
