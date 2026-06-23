@@ -26,6 +26,12 @@ dependencies:
   - metabat2       # binning (+ jgi_summarize_bam_contig_depths)
   - checkm-genome  # MAG completeness/contamination QC
   - gtdbtk         # MAG genome taxonomy
+  # --- optional: open-world novelty trigger (--novelty) + viral arm (--viral);
+  #     each needs its own DB ($KRAKEN2_DB/databases/kraken2 Standard build,
+  #     $GENOMAD_DB/databases/genomad_db, $CHECKV_DB/databases/checkv_db).
+  #     Stage skips gracefully if the tool or DB is absent. ---
+  - genomad        # viral identification + ICTV taxonomy
+  - checkv         # viral genome completeness/quality
   # --- Python runtime deps (mirror pyproject.toml) ---
   - click>=8.1
   - numpy>=1.26
