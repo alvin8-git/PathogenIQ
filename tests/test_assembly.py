@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch
 
 from pathogeniq.assembly import (
@@ -43,6 +44,24 @@ def test_fasta_stats(tmp_path):
 def test_run_megahit_missing_returns_none(tmp_path):
     with patch("pathogeniq.assembly.shutil.which", return_value=None):
         assert run_megahit(_cfg(tmp_path), tmp_path / "reads.fq.gz") is None
+
+
+def test_run_megahit_creates_parent_dir(tmp_path):
+    # regression: megahit's own mkdir is single-level (os.mkdir) and dies with
+    # FileNotFoundError if assembly/ is missing -> run_megahit must create the parent.
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        out = Path(cmd[cmd.index("-o") + 1])
+        captured["parent_exists"] = out.parent.is_dir()
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "final.contigs.fa").write_text(">c\nACGT\n")
+
+    with patch("pathogeniq.assembly.shutil.which", return_value="megahit"), \
+         patch("pathogeniq.assembly.subprocess.run", side_effect=fake_run):
+        result = run_megahit(_cfg(tmp_path), tmp_path / "reads.fq")
+    assert captured["parent_exists"] is True          # parent made BEFORE megahit ran
+    assert result is not None and result.name == "final.contigs.fa"
 
 
 def test_run_assembly_stage_skips_without_megahit(tmp_path):

@@ -80,6 +80,10 @@ def run_megahit(cfg: PipelineConfig, reads: Path) -> Path | None:
     if not shutil.which("megahit"):
         return None
     out = cfg.output_dir / "assembly" / "megahit"
+    # megahit's own mkdir is single-level (os.mkdir) and dies if the parent is
+    # missing; it also wants to create `out` itself under --force, so make the
+    # PARENT but not `out`.
+    out.parent.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(
             ["megahit", "-r", str(reads), "-o", str(out), "-t", str(cfg.threads), "--force"],
