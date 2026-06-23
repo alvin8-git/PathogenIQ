@@ -1,5 +1,37 @@
 # PathogenIQ TODO — Next Session
 
+## Current State (updated 2026-06-23)
+
+Recent arc = airborne-pathogen detection + open-world (novel) capability.
+
+**Done (this arc):**
+- Air NTC background: scored air run (Zymo spike 6/10; misses = air-NTC over-subtraction,
+  not detection failures); **flag-not-subtract** for dual-use pathogens (`background.py`);
+  established the paper never subtracted NTC + spike = wet-lab Zymo D6300 (see
+  `docs/air-concordance-validation-2026-06-22.md`). AIR specimen type added.
+- **Open-world arms:** R1 novelty trigger (`novelty.py`, `--novelty`); R2 viral arm
+  (`viral.py`, `--viral`, geNomad+CheckV) — **validated 100% recall (3/3)** via the
+  in-silico spike-in harness (`scripts/12`). Viral tools isolated in a `genomad` env +
+  symlinks (`scripts/13`); DBs installed. See `docs/air-open-world-detection-2026-06-23.md`.
+- Bugs fixed: `run_megahit` parent-dir (was no-op'ing `--assemble` AND `--viral`);
+  numpy-2 vs geNomad env conflict (pipeline restored, 168 tests pass).
+
+**Next (priority order):**
+1. **R4 pathogenicity triage** — contig-level VFDB/CARD + phylo-proximity-to-pathogen on
+   MAGs/contigs (the "pathogen vs environmental microbe" discriminator).
+2. **R5 open-world grading** — evidence tier for reference-free hits (breadth, completeness,
+   hallmark count, phylo-confidence).
+3. **Validate R1 novelty** — needs the Kraken2 Standard DB (~50 GB) installed.
+4. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
+   *Sphingomonas* / *Methylobacterium*.
+5. **Install abricate** — AMR + VFDB screens currently skip (not on PATH).
+6. Plan 6 leftovers (#4 BHI enrichment SOP, #5 strain ID, #7 diversity, #8 GTDB, #9
+   overrepresented-seq trim); Plan 3 leftovers (3A extract, 3B AMRFinderPlus, 3C MLST).
+
+Historical plan detail below (kept for reference).
+
+---
+
 ## Critical Bug: Pipeline Produces Broken Output  — RESOLVED (verified 2026-06-21)
 
 **Status:** FIXED in commits 8c77b68 (resolve names from GCF accessions) and
