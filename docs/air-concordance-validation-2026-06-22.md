@@ -78,6 +78,80 @@ environmental, recoverable only via the triggered assembly arm.)
   installed. megahit + metabat2 alone would recover bins but without taxonomy the
   species concordance can't be done.
 
-## Results
+## Results — read-based, `--specimen air` (scored 2026-06-23)
 
-_(read-based results appended after the run; assembly results pending tool install)_
+Run: `air_all.sh` (headless, setsid). 5 filters + 2 Zymo spike-ins, air NTC
+background, no PDF. AMR/VFDB columns **empty in every report** — `abricate` is
+not installed (fields are `[]`, no crash; the screen is non-blocking by design),
+so AMR/virulence concordance is out of scope for this run.
+
+### Spike-ins — scored validation (Zymo D6300, known truth)
+
+Truth = 8 bacteria @ ~12% + 2 yeast @ ~2% (10 organisms). Both replicates
+(SRR32514283, SRR32514284) agree. Detected **6/10**, all Grade B (correctly
+capped at B by the Tier-2 pooled background):
+
+| Zymo member | In DB? | Detected | Note |
+|-------------|--------|----------|------|
+| Salmonella enterica | Y | ✅ ~22% | |
+| Lactobacillus fermentum | Y | ✅ ~25% | |
+| Enterococcus faecalis | Y | ✅ ~7% | |
+| Staphylococcus aureus | Y | ✅ ~5% | pathogen, **contam=False** ✓ |
+| Listeria monocytogenes | Y | ✅ ~2% | |
+| Cryptococcus neoformans | Y | ✅ ~0.03% | yeast, recovered at <0.1% |
+| Escherichia coli | Y | ❌ | **subtracted by air NTC** (E.coli 346 788 rpm in background) |
+| Pseudomonas aeruginosa | Y | ❌ | **subtracted by air NTC** (140 308 rpm in background) |
+| Saccharomyces cerevisiae | Y | ❌ | **subtracted by air NTC** (35 717 rpm in background) |
+| Bacillus subtilis | **N** | ❌ | not in DB; surrogate *B. anthracis* also in background |
+
+**The 4 misses are not detection failures — they are background over-subtraction.**
+Raw read-based detection recovers ≥9/10 (all but the *B. subtilis* DB gap); the
+air NTC background then zeroes out 3 genuine pathogens (*E. coli*, *P. aeruginosa*,
+*S. cerevisiae*) because **those exact taxa dominate the air "control" runs** used
+to build `air_ntc.tsv`.
+
+### The air NTC background is contaminated (root cause)
+
+`air_ntc.tsv` (6 aircraft-control runs) subtracts, by descending rpm:
+*Shigella sonnei* 419 713 · *E. coli* 346 788 · *S. epidermidis* 309 000 ·
+*P. aeruginosa* 140 308 · *C. acnes* 56 869 · *S. cerevisiae* 35 717 ·
+*B. anthracis* 34 857 · *S. flexneri* 19 090.
+
+This is the **same failure mode we rejected for the HUNT blanks** (E. coli–inflated):
+the controls are not clean blanks — they carry kitome + carryover at pathogen-level
+abundance, so the background subtracts real signal. *E. coli / Shigella / Pseudomonas*
+are dual-use (kitome **and** clinical target); subtracting them at species level is
+exactly the mistake the AIR contaminant prior deliberately avoids (flag, don't demote).
+
+**Fix options (not yet done):** (a) vet the 6 control runs — confirm they are true
+sampling blanks, not environmental samples; (b) for dual-use taxa, **flag-not-subtract**
+in the air background (mirror the contaminant-prior policy) so a real *E. coli*/
+*P. aeruginosa* hit is demoted to a capped grade rather than erased.
+
+### Contaminant-prior check — PASS
+
+Across all 7 reports, **no real pathogen was demoted** by the air prior:
+*S. aureus, Salmonella, Listeria, Enterococcus, S. maltophilia, S. flexneri,
+C. perfringens* all `contaminant_risk=False`. Only *C. acnes* (filter SRR32514297)
+was flagged — correct. Confirms `test_air_does_not_demote_real_pathogens`.
+
+### Filters — concordance vs paper (Fig 3G **bold** in-DB targets)
+
+| Paper bold target | Recovered? | Where |
+|-------------------|-----------|-------|
+| *E. coli* (genus ~22.6%) | ✅ as ***Shigella flexneri*** | 4/5 filters (E.coli↔Shigella cross-map; genomically near-identical) |
+| *Clostridium perfringens* | ✅ | SRR32514308 (Grade B, 4.5%) |
+| *C. acnes* (common) | ✅ flagged contaminant | SRR32514297 |
+| *Pseudomonas aeruginosa* | ❌ | **subtracted by air NTC** (in background at 140 308 rpm) |
+| *Bacillus cereus / subtilis* | ❌ | DB gap + *B. anthracis* surrogate in background |
+
+Also recovered, not in paper bold set: *Stenotrophomonas maltophilia* (3/5 filters,
+Grade B) — plausible real environmental Gram-negative, unscorable (agreement-not-truth).
+
+**Net:** read-based detection itself is healthy (6 Zymo + cross-mapped E. coli + C.
+perfringens, contaminant prior behaving). The **single dominant problem is the air
+NTC background**: built from contaminated controls, it erases *E. coli*, *P.
+aeruginosa*, and *S. cerevisiae* from both the scored spike and the filter
+concordance. Rebuild/flag-not-subtract before trusting air negatives. Assembly arm
+(environmental dominants *Sphingomonas*/*Methylobacterium*) still blocked on tool
+install.
