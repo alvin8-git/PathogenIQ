@@ -262,4 +262,4 @@ def test_cli_run_no_candidates_exits_cleanly(tmp_path):
         ])
 
     assert result.exit_code == 0
-    assert "No pathogens detected" in result.output
+    assert "No targeted pathogens detected" in result.output

@@ -1,4 +1,5 @@
 import click
+import numpy as np
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,11 +10,12 @@ from .background import (
     load_default_background,
 )
 from .config import PipelineConfig, ReadType, SpecimenType
-from .em import bootstrap_ci, em_abundance
+from .em import EMResult, bootstrap_ci, em_abundance
 from .host_remove import run_host_removal, run_phix_removal
 from .quantify import quantify_entries
-from .assembly import run_assembly_stage
+from .assembly import run_assembly_stage, run_megahit
 from .novelty import assess_novelty
+from .viral import run_viral_stage
 from .html_report import write_html_report
 from .pdf_report import write_pdf_report
 from .qc import run_qc
@@ -58,10 +60,13 @@ def cli():
               help="Open-world novelty trigger: classify reads against a broad Kraken2 DB and "
                    "report the unclassified fraction (flags novel/uncatalogued content; "
                    "needs kraken2 + a Standard DB at $KRAKEN2_DB or databases/kraken2)")
+@click.option("--viral", "viral_flag", is_flag=True, default=False,
+              help="Run the viral identification arm (geNomad + CheckV) on the assembly to "
+                   "detect airborne viruses not in the bacterial DBs (slow; tools/DBs required)")
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
         threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
         ntc_fastq, background_table, no_background,
-        spike_taxon, spike_copies, sample_volume, assemble, novelty_flag):
+        spike_taxon, spike_copies, sample_volume, assemble, novelty_flag, viral_flag):
     """Run the full PathogenIQ pipeline."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -102,16 +107,40 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                        + (" — FLAGGED: novel/uncatalogued content, consider --assemble"
                           if novelty.flagged else ""))
 
+    def _discovery_arms():
+        """Open-world arms (assembly MAGs + viral) on the non-host reads. Run
+        regardless of targeted hits so novel/viral content with no DB match is
+        still recovered. ponytail: --assemble and --viral each assemble; the
+        double megahit when both are set is acceptable (both opt-in and slow)."""
+        m = v = None
+        if assemble:
+            click.echo("      De novo assembly + MAG recovery (this is slow)...")
+            m = run_assembly_stage(cfg, nonhuman)
+            click.echo(f"      {len(m)} MAG(s) recovered" if m else
+                       "      No MAGs recovered (assembly tools/DBs missing or no bins)")
+        if viral_flag:
+            click.echo("      Viral identification arm (geNomad + CheckV)...")
+            contigs = run_megahit(cfg, nonhuman)
+            v = run_viral_stage(cfg, contigs) if contigs is not None else []
+            click.echo(f"      {len(v)} viral contig(s) identified" if v else
+                       "      No viral contigs (geNomad/DBs missing or none found)")
+        return m, v
+
     click.echo("[3/6] Sketch screening...")
     hits = run_sketch_screen(cfg, nonhuman)
     click.echo(f"      {len(hits)} candidate organisms shortlisted")
 
     if not hits:
-        click.echo("No pathogens detected above threshold.")
+        click.echo("No targeted pathogens detected above threshold.")
         if novelty is not None and novelty.flagged:
             click.echo(f"NOTE: {novelty.unclassified_fraction:.1%} of reads are unclassified "
-                       f"against the broad DB — possible novel organism. Run with --assemble "
-                       f"to recover and classify it.")
+                       f"against the broad DB — possible novel organism.")
+        # The open-world arms can still recover novel/viral genomes with no DB hit.
+        mags, viral = _discovery_arms()
+        if any(x is not None for x in (novelty, mags, viral)):
+            empty_em = EMResult(abundances=np.array([]), n_reads=0, n_organisms=0, iterations=0)
+            report_dir = write_report(cfg, [], empty_em, novelty=novelty, mags=mags, viral=viral)
+            click.echo(f"Report written to: {report_dir}")
         return
 
     click.echo("[4/6] Targeted alignment + EM abundance...")
@@ -157,16 +186,11 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"      WARNING: spike {spike_taxon} not detected — "
                        f"absolute quantification unavailable (check spike input)")
 
-    mags = None
-    if assemble:
-        click.echo("      De novo assembly + MAG recovery (this is slow)...")
-        mags = run_assembly_stage(cfg, nonhuman)
-        click.echo(f"      {len(mags)} MAG(s) recovered"
-                   if mags else "      No MAGs recovered (assembly tools/DBs missing or no bins)")
+    mags, viral = _discovery_arms()
 
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
                               virulence_hits=virulence_hits, spike_info=spike_info, mags=mags,
-                              novelty=novelty)
+                              novelty=novelty, viral=viral)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)

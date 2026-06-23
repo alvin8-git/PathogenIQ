@@ -188,6 +188,7 @@ def write_report(
     spike_info=None,
     mags: list | None = None,
     novelty=None,
+    viral: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -291,6 +292,20 @@ def write_report(
                 "fasta_path": str(m.fasta_path),
             }
             for m in mags
+        ]
+    if viral is not None:
+        payload["viral"] = [
+            {
+                "contig_id": v.contig_id,
+                "length": v.length,
+                "taxonomy": v.taxonomy,
+                "topology": v.topology,
+                "virus_score": v.virus_score,
+                "n_hallmarks": v.n_hallmarks,
+                "completeness": v.completeness,
+                "checkv_quality": v.checkv_quality,
+            }
+            for v in viral
         ]
     if novelty is not None:
         payload["novelty"] = {
