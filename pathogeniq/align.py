@@ -1,10 +1,11 @@
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from .config import PipelineConfig, ReadType
+from .coverage import CoverageStats, coverage_from_paf
 from .sketch import SketchHit
 
 
@@ -14,6 +15,8 @@ class AlignmentResult:
     organism_names: list[str]
     read_ids: list[str]
     taxon_ids: list[str]           # parallel to organism_names; stable join key for NTC background
+    # parallel to organism_names; breadth-of-coverage per organism (empty = not computed)
+    coverage: list[CoverageStats] = field(default_factory=list)
 
 
 def run_targeted_alignment(
@@ -26,6 +29,7 @@ def run_targeted_alignment(
 
     _seen_ids: dict[str, int] = {}   # read_id → index, O(1) lookup
     org_reads: dict[int, set[str]] = {i: set() for i in range(len(hits))}
+    coverage: list[CoverageStats] = []
 
     preset = "sr" if cfg.read_type == ReadType.SHORT else "map-ont"
 
@@ -41,6 +45,8 @@ def run_targeted_alignment(
             "-o", str(paf_file),
         ]
         subprocess.run(cmd, check=True)
+        paf_text = paf_file.read_text() if paf_file.exists() else ""
+        coverage.append(coverage_from_paf(paf_text))   # breadth over read depth -> artifact gate
         read_set = _parse_paf(paf_file)
         org_reads[org_idx] = read_set
         for r in read_set:
@@ -64,6 +70,7 @@ def run_targeted_alignment(
         organism_names=[h.name for h in hits],
         read_ids=all_read_ids,
         taxon_ids=[h.taxon_id for h in hits],
+        coverage=coverage,
     )
 
 

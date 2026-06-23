@@ -175,7 +175,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
 
     entries = build_entries(
         cfg, align_result.organism_names, em_result, ci_lower, ci_upper,
-        align_result.taxon_ids, background=background,
+        align_result.taxon_ids, background=background, coverage=align_result.coverage,
     )
     removed = len(align_result.organism_names) - len(entries)
     if removed:

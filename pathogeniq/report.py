@@ -33,6 +33,12 @@ _MIN_READS: dict[SpecimenType, int] = {
 }
 
 _MAX_CI_WIDTH_A = 0.15
+# Breadth-of-coverage gate: reads covering far less of the genome than their depth
+# predicts (Lander-Waterman) are clumped at a few loci -> PCR-dup / low-complexity /
+# cross-mapping artifact, not a real organism. Below this observed/expected ratio the
+# finding is non-gradeable (Grade X). ponytail: provisional cutoff — calibrate on
+# labeled air data (cf. the read-floor work) before clinical use.
+_MIN_BREADTH_RATIO = 0.25
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,7 @@ class GradingInput:
     specimen_type: SpecimenType
     tier: int = 3       # NTC background tier: 1 batch-matched, 2 pooled, 3 none
     crossmap: bool = False   # likely a cross-mapping artifact of a dominant relative
+    breadth_ratio: float | None = None   # observed/expected coverage breadth; None = not computed
 
 
 def _has_invalid_stats(g: GradingInput) -> bool:
@@ -76,6 +83,8 @@ def grade(g: GradingInput) -> EvidenceGrade:
     min_reads = _MIN_READS.get(g.specimen_type, 5)
     if g.read_count < min_reads:
         return EvidenceGrade.X
+    if g.breadth_ratio is not None and g.breadth_ratio < _MIN_BREADTH_RATIO:
+        return EvidenceGrade.X   # reads clumped far below expected breadth -> artifact
     if g.contaminant_risk:
         return EvidenceGrade.C
     if g.ci_width <= _MAX_CI_WIDTH_A and g.tier == 1:
@@ -96,6 +105,7 @@ class ReportEntry:
     tier: int = 3         # NTC background tier applied to this finding (1/2/3)
     crossmap_of: str = ""  # dominant relative this is likely cross-mapping from
     absolute_copies: float | None = None  # spike-in absolute load (None = no spike)
+    breadth_ratio: float | None = None  # observed/expected coverage breadth (None = not computed)
 
     def as_input(self) -> GradingInput:
         """Normalize this entry into the struct the grading rule reads."""
@@ -107,6 +117,7 @@ class ReportEntry:
             specimen_type=self.specimen_type,
             tier=self.tier,
             crossmap=bool(self.crossmap_of),
+            breadth_ratio=self.breadth_ratio,
         )
 
     @property
@@ -129,6 +140,7 @@ def build_entries(
     taxon_ids: list[str],
     *,
     background: BackgroundModel | None = None,
+    coverage: list | None = None,   # CoverageStats parallel to organism_names
 ) -> list[ReportEntry]:
     """Build the report entries once, for every renderer (JSON/TSV/PDF/HTML).
 
@@ -151,6 +163,7 @@ def build_entries(
             specimen_type=cfg.specimen_type,
             taxon_id=taxon_ids[i],
             tier=tier,
+            breadth_ratio=(coverage[i].breadth_ratio if coverage else None),
         )
         for i, name in enumerate(organism_names)
     ]
@@ -264,6 +277,8 @@ def write_report(
                 "contaminant_risk": e.contaminant_risk,
                 "invalid_stats": e.invalid_stats,
                 "crossmap_of": e.crossmap_of,
+                "breadth_ratio": (None if e.breadth_ratio is None
+                                  else round(e.breadth_ratio, 3)),
                 "absolute_copies": (None if e.absolute_copies is None
                                     else round(e.absolute_copies, 4)),
                 "copies_per_volume": _per_volume(e.absolute_copies),

@@ -273,6 +273,27 @@ def test_build_entries_sets_tier_and_filters_background(tmp_path):
     assert all(e.tier == 2 for e in entries)
 
 
+def test_breadth_ratio_gate_demotes_clumped_to_x():
+    # enough reads + tight CI, but reads clumped far below expected breadth -> artifact (X)
+    e = ReportEntry(
+        organism="Klebsiella pneumoniae", abundance=0.2, ci_lower=0.18, ci_upper=0.22,
+        read_count=100, specimen_type=SpecimenType.BLOOD, tier=1, breadth_ratio=0.05,
+    )
+    assert e.grade == EvidenceGrade.X
+    # same finding with healthy breadth grades normally (A at tier 1, tight CI)
+    e_ok = ReportEntry(
+        organism="Klebsiella pneumoniae", abundance=0.2, ci_lower=0.18, ci_upper=0.22,
+        read_count=100, specimen_type=SpecimenType.BLOOD, tier=1, breadth_ratio=0.95,
+    )
+    assert e_ok.grade == EvidenceGrade.A
+    # breadth_ratio None (not computed) must not gate
+    e_none = ReportEntry(
+        organism="Klebsiella pneumoniae", abundance=0.2, ci_lower=0.18, ci_upper=0.22,
+        read_count=100, specimen_type=SpecimenType.BLOOD, tier=1, breadth_ratio=None,
+    )
+    assert e_none.grade == EvidenceGrade.A
+
+
 def test_build_entries_flags_dual_use_pathogen_not_subtract(tmp_path):
     # a contaminated NTC must NOT erase a real treatable pathogen: a dual-use
     # taxon (E. coli) that overlaps background is KEPT and flagged; a pure
