@@ -64,6 +64,24 @@ def test_bootstrap_ci_shape():
     assert np.all(lower <= upper)
 
 
+def test_bootstrap_ci_parallel_matches_serial():
+    # per-iteration spawned seeds make the result independent of n_jobs / order,
+    # so the multiprocessing path is bit-identical to the serial one.
+    rng = np.random.default_rng(0)
+    # >= 20k rows so the parallel path (Pool) is actually taken, not the serial guard
+    matrix = (rng.random((25_000, 3)) > 0.4).astype(float)
+    matrix[matrix.sum(axis=1) == 0, 0] = 1.0   # avoid all-zero rows
+    s_lo, s_hi = bootstrap_ci(matrix, n_bootstrap=8, n_jobs=1)
+    p_lo, p_hi = bootstrap_ci(matrix, n_bootstrap=8, n_jobs=4)   # exercises the Pool
+    assert np.array_equal(s_lo, p_lo)
+    assert np.array_equal(s_hi, p_hi)
+
+
+def test_bootstrap_ci_empty_matrix():
+    lower, upper = bootstrap_ci(np.zeros((0, 3)), n_bootstrap=10, n_jobs=2)
+    assert lower.shape == (3,) and upper.shape == (3,)
+
+
 def test_bootstrap_ci_coverage():
     matrix = np.array([[1, 0]] * 7 + [[0, 1]] * 3, dtype=float)
     result = em_abundance(matrix)

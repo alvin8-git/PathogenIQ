@@ -156,7 +156,9 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     click.echo("[4/6] Targeted alignment + EM abundance...")
     align_result = run_targeted_alignment(cfg, nonhuman, hits)
     em_result = em_abundance(align_result.alignment_matrix)
-    ci_lower, ci_upper = bootstrap_ci(align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap)
+    ci_lower, ci_upper = bootstrap_ci(
+        align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap, n_jobs=cfg.threads,
+    )
 
     click.echo("[5/6] AMR & virulence screening...")
     # Assemble once: AMR/virulence (and the viral arm) screen the contigs, not the

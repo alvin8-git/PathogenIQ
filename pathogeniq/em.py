@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from multiprocessing import Pool
 
 import numpy as np
 
@@ -54,21 +55,56 @@ def em_abundance(
     )
 
 
+# Bootstrap workers (module-level so multiprocessing can pickle them). The
+# alignment matrix is set once per worker via the initializer rather than pickled
+# per task — it is large and read-only.
+_BOOT_MATRIX: np.ndarray | None = None
+
+
+def _boot_init(matrix: np.ndarray) -> None:
+    global _BOOT_MATRIX
+    _BOOT_MATRIX = matrix
+
+
+def _boot_one(seed_seq: np.random.SeedSequence) -> np.ndarray:
+    m = _BOOT_MATRIX
+    rng = np.random.default_rng(seed_seq)
+    idx = rng.integers(0, m.shape[0], size=m.shape[0])
+    return em_abundance(m[idx]).abundances
+
+
 def bootstrap_ci(
     alignment_matrix: np.ndarray,
     n_bootstrap: int = 100,
     alpha: float = 0.05,
     seed: int = 42,
+    n_jobs: int = 1,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Bootstrap (1-alpha) confidence interval on EM abundance estimates."""
-    rng = np.random.default_rng(seed)
-    n_reads = alignment_matrix.shape[0]
-    estimates = np.zeros((n_bootstrap, alignment_matrix.shape[1]))
+    """Bootstrap (1-alpha) confidence interval on EM abundance estimates.
 
-    for b in range(n_bootstrap):
-        idx = rng.integers(0, n_reads, size=n_reads)
-        boot = alignment_matrix[idx]
-        estimates[b] = em_abundance(boot).abundances
+    The ``n_bootstrap`` iterations are independent (each resamples reads + runs EM),
+    so with ``n_jobs > 1`` they run across processes. Each iteration draws from its
+    own spawned RNG stream, so the result is **identical and reproducible**
+    regardless of ``n_jobs`` or execution order — parallelism never changes the CI.
+    """
+    n_orgs = alignment_matrix.shape[1]
+    if alignment_matrix.shape[0] == 0 or n_bootstrap <= 0:
+        return np.zeros(n_orgs), np.zeros(n_orgs)
+    seeds = np.random.SeedSequence(seed).spawn(n_bootstrap)
+
+    # Only parallelize when the per-iteration EM work is large enough to amortize
+    # process-spawn overhead — for a small (e.g. low-biomass clinical) matrix the
+    # serial loop is faster. ponytail: 20k-read cutoff is a heuristic, tune if needed.
+    use_parallel = (
+        n_jobs and n_jobs > 1 and n_bootstrap > 1 and alignment_matrix.shape[0] >= 20_000
+    )
+    if use_parallel:
+        with Pool(processes=min(n_jobs, n_bootstrap),
+                  initializer=_boot_init, initargs=(alignment_matrix,)) as pool:
+            estimates = np.array(pool.map(_boot_one, seeds))
+    else:
+        _boot_init(alignment_matrix)
+        estimates = np.array([_boot_one(s) for s in seeds])
 
     lower = np.percentile(estimates, 100 * alpha / 2, axis=0)
     upper = np.percentile(estimates, 100 * (1 - alpha / 2), axis=0)
