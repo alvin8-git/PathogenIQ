@@ -10,10 +10,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - Nextflow orchestration (local Docker, SLURM, AWS Batch)
 - Batch-matched NTC (Tier 1) prospective evaluation for Grade-A claims
-- Broader/cleaner Tier-2 background from more non-spiked reagent-blank studies
-- Air / bioaerosol surveillance adaptation (Plan 5) — breadth-of-coverage gating
-- Web dashboard for clinical users
-- FHIR-compatible report export
+- Calibrate provisional cutoffs on labeled air data (breadth ratio, open-world completeness bands, air read floors)
+- GTDB-Tk DB install to run the bacterial-MAG path (R3/R4/R5) on real data
+- Viral-contig pathogenicity triage (ARG-carrying phage)
+- Web dashboard for clinical users; FHIR-compatible report export
+
+---
+
+## [0.4.0] — 2026-06-23 — Air Surveillance & Open-World Detection
+
+This release extends PathogenIQ from clinical fluids to **air / bioaerosol surveillance** and adds an **open-world** arm that detects pathogens not in the reference database — including viruses and novel organisms. Design and validation: `docs/air-open-world-detection-2026-06-23.md`, `docs/air-pathogen-wedge-design-2026-06-22.md`, `docs/air-concordance-validation-2026-06-22.md`.
+
+### Added
+- **AIR specimen type** (`config.py`) — air/bioaerosol read floors + an air kitome contaminant prior (*Cutibacterium*, *Sphingomonas*, *Methylobacterium*, *Ralstonia*…), deliberately **not** genus-broad on *Pseudomonas*/*Acinetobacter* so real pathogens aren't demoted
+- **Flag-not-subtract for dual-use pathogens** (`background.py`) — a contaminated NTC flags (not erases) *E. coli*, *Pseudomonas*, *Klebsiella*, *Shigella*, *Salmonella*, *S. aureus*, *Acinetobacter*, *Enterobacter*; pure contaminants still subtracted
+- **Breadth-of-coverage gate wired into grading** — per-organism breadth computed from the alignment PAF (`align.py` → `coverage.py`); ratio < 0.25 → Grade X (clumped artifact). Surfaced as `breadth_ratio` in the report
+- **PhiX removal** (`host_remove.py`) — minimap2 vs the bundled Illumina PhiX spike-in (NC_001422), non-blocking
+- **VFDB virulence screen** + **spike-in absolute quantification** (`amr.py`, `quantify.py`) — copies / copies-per-volume anchored on a known spike
+- **Open-world arms**:
+  - R1 **novelty trigger** (`novelty.py`, `--novelty`) — broad-Kraken2 unclassified "dark-matter" fraction
+  - R2 **viral arm** (`viral.py`, `--viral`) — geNomad (ID + ICTV taxonomy) → CheckV (completeness)
+  - R3 **assembly/MAG recovery** (`assembly.py`, `--assemble`) — MEGAHIT → MetaBAT2 → CheckM → GTDB-Tk
+  - R4 **pathogenicity triage** (`pathogenicity.py`) — VFDB/CARD markers + GTDB phylo-proximity → PATHOGEN_CANDIDATE / PATHOGEN_ADJACENT / ENVIRONMENTAL
+  - R5 **open-world grading** (`report.py::grade_open_world`) — A/B/C/X for MAGs/viral from completeness + contamination + marker signal, **capped at B** (no same-run NTC)
+- **CLI flags** `--novelty`, `--viral`, `--assemble`, `--spike-taxon/--spike-copies/--sample-volume`; JSON `novelty`/`viral`/`mags`/`pathogenicity` blocks; the open-world arms run even when the targeted screen finds zero hits
+- **Tooling isolation** — `scripts/13_setup_viral_env.sh` installs geNomad/CheckV (and ABRicate) in their own conda envs with `PATH` symlinks/wrappers, so the core NumPy-2 stack is never perturbed
+- **Validation harness & data** — `scripts/12_viral_insilico_spikein.py` (in-silico viral spike, offline `--selfcheck`); air datasets wired into `scripts/04` (Jeilu et al. 2025, PRJNA1228129)
+- Unit tests for every new module (`test_novelty.py`, `test_viral.py`, `test_pathogenicity.py`, plus open-world grade + breadth + dual-use cases in `test_report.py`)
+
+### Validated
+- **Viral arm: 100% recall (3/3)** — in-silico T4 / Lambda / SARS-CoV-2 recovered with correct ICTV lineage from a real aircraft-filter background
+- **Air concordance** — Zymo spike recall 6/10 under the air NTC; the 4 misses were **background over-subtraction**, the empirical origin of flag-not-subtract
+- **Breadth gate** — real Zymo organisms score 0.79–0.96 (pass); the 0.25 cutoff catches clumped artifacts without touching real low-abundance hits
+
+### Fixed
+- `run_megahit` silently produced nothing when `assembly/` did not pre-exist (megahit's `os.mkdir` is single-level) — had made `--assemble` **and** `--viral` no-op on every run; caught by the viral harness
+- geNomad/CheckV install had downgraded the core env's NumPy and broken SciPy — resolved by env isolation (above); pipeline env restored
 
 ---
 

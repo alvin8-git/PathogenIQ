@@ -122,6 +122,33 @@ Report will be at `results/zymo_rep1/report/pathogeniq_report.json`.
 
 ---
 
+## Validation, Benchmark & Open-World Scripts (04–13)
+
+Scripts 01–03 build the databases the pipeline needs. The rest support validation,
+benchmarking, the NTC background, and the open-world / air-surveillance arm.
+
+| Script | Purpose |
+|--------|---------|
+| `04_download_validation_data.py` | Download labelled data from ENA (CAMI/HMP, NTC blanks, and the Jeilu et al. aircraft datasets — `blanks-hunt`, `blanks-qiita`, `air-aircraft-filter`, `air-aircraft-ntc`, `air-aircraft-spike`) with title filters + `--limit` |
+| `05_select_kitome_controls.py` | Select kitome/negative controls for the background pool |
+| `06_benchmark.py` | Single-community grading benchmark vs raw Kraken2 |
+| `07_build_kraken_db.py` | Build a custom Kraken2 DB from the tier-1 genomes (benchmark baseline) |
+| `08_heldout_pr_auc.py` | Multi-community held-out PR-AUC / precision@recall (floor frozen on Zymo) |
+| `09_reads_mapping_truth.py` | Roll CAMI `reads_mapping.tsv` up into per-sample truth |
+| `10_validate_dispersion.py` | Leave-one-out dispersion-prior validation on kitome blanks (`--selfcheck`) |
+| `11_pool_blank_background.py` | Classify + pool negative-control blanks into a Tier-2 background table |
+| `12_viral_insilico_spikein.py` | In-silico viral spike-in validation (wgsim → assembly → geNomad/CheckV → score); offline `--selfcheck` |
+| `13_setup_viral_env.sh` | Set up the viral arm: isolated `genomad` env (geNomad + CheckV), fetch DBs, symlink CLIs into the pathogeniq env |
+
+**Open-world DBs (optional).** The novelty trigger needs a broad Kraken2 DB
+(`databases/kraken2`); the viral arm needs geNomad + CheckV DBs (`scripts/13`,
+~3 GB). The MAG arm's **GTDB-Tk DB (~110 GB)** is deliberately not part of the core
+install — it is a triggered Tier-2 extra. geNomad/CheckV/ABRicate are installed in
+their own conda envs (they require `numpy<2`) and exposed on `PATH`; never install
+them into the core `pathogeniq` env.
+
+---
+
 ## Alternative: Pre-built sourmash Databases
 
 If you want to skip genome downloads entirely, sourmash provides pre-built databases

@@ -4,268 +4,217 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey)](https://github.com/alvin8-git/PathogenIQ)
 
-A lightweight, clinical-grade metagenomic pathogen detection pipeline for Illumina and Nanopore sequencing data. PathogenIQ uses a **sketch-first** architecture to screen 20,000+ genomes in under 60 seconds before targeted alignment and EM-based abundance estimation — delivering clinical reports in under one hour.
+A local clinical-metagenomics pipeline for detecting pathogens directly from sequencing reads — Illumina or Nanopore. PathogenIQ pairs a fast **sketch-first** targeted screen with a **statistically honest interpretation layer**: EM abundance with bootstrap confidence intervals, no-template-control (NTC) background subtraction, breadth-of-coverage gating, and a specimen-aware A/B/C/X evidence grade. On top of the targeted core it adds an **open-world** arm for **air / bioaerosol surveillance** that catches pathogens not in the reference database — including viruses and novel organisms.
 
----
-
-## Key Features
-
-- **Sketch-first screening** — sourmash MinHash pre-filters to 50–200 candidates; no wasted alignment cycles
-- **EM abundance estimation** — Expectation-Maximization resolves multi-mapping reads with bootstrap Bayesian confidence intervals
-- **Evidence grading (A/B/C/X)** — specimen-aware thresholds suppress common contaminants automatically
-- **Dual read-type support** — Illumina short reads (BWA-MEM2) and Nanopore long reads (minimap2)
-- **All specimen types** — blood, CSF, BAL, tissue, with specimen-specific interpretation priors
-- **Tiered pathogen database** — WHO Priority Pathogens, CDC Select Agents, common clinical viruses, fungi, parasites
-- **Novel pathogen flagging** — hits outside the curated database are surfaced for review
-- **AMR gene detection** — ABRicate+CARD scans non-human reads for antimicrobial resistance genes (e.g., mecA, blaCTX-M-15)
-- **PDF clinical report** — formatted single-page report with grade colour-coding, AMR summary, and research-use disclaimer
+The design goal is not "name every organism" — that is commodity. It is to turn a pile of reads into a **short, interpretable, controlled-confidence pathogen list** a clinician can act on, and to be explicit about what the evidence does and does not support.
 
 ---
 
-## How PathogenIQ Compares
+## What it does
 
-| Feature | CZID | Kraken2 + Bracken | **PathogenIQ** |
-|---|---|---|---|
-| **Architecture** | Cloud-only (AWS) | Local only | Local + cloud burst |
-| **Read types** | Short + Long | Short read optimised | Short + Long |
-| **Typical turnaround** | 4–8 hours | < 30 min | **< 1 hour** |
-| **Screening method** | BLAST (NT/NR) | k-mer exact match | **MinHash sketch → targeted align** |
-| **Abundance estimation** | Read count / RPM | Bracken re-estimation | **EM with bootstrap CI** |
-| **Confidence scoring** | None | None | **Bayesian CI + Grade A/B/C/X** |
-| **Specimen-aware priors** | No | No | **Yes** |
-| **Host removal** | BWA | Bowtie2 / KneadData | BWA-MEM2 / minimap2 |
-| **False positive control** | Minimum read filter | None | **Graded evidence system** |
-| **Novel pathogen alert** | No | No | **Yes** |
-| **Clinical report** | Web UI only | None | **JSON + TSV + PDF** |
-| **AMR detection** | No | None | **ABRicate + CARD** |
-| **Deployment** | Cloud-only ($$) | Local | **Hybrid (free self-hosted)** |
-| **ZymoBIOMICS validated** | Yes | Partial | **Yes (integration tests)** |
+**Targeted core (always on)**
 
-> **Bottom line:** CZID is excellent for research but slow and cloud-locked. Kraken2+Bracken is fast but lacks confidence quantification and clinical context. PathogenIQ delivers sub-hour turnaround with statistically principled abundance estimates and a specimen-aware reporting layer designed for clinical decision support.
+- **Sketch-first screening** — sourmash MinHash/SBT shortlists candidate genomes before any heavy alignment
+- **EM abundance + bootstrap CI** — Expectation-Maximization resolves multi-mapping reads; 95% CIs quantify uncertainty
+- **NTC background subtraction** — negative-binomial upper-tail test against a reagent/kitome background, the load-bearing control for low-biomass samples ([`background.py`](pathogeniq/background.py))
+- **Flag-not-subtract for dual-use pathogens** — a contaminated control can never *erase* a real treatable pathogen (E. coli, Pseudomonas, Klebsiella, Salmonella, S. aureus…); it is flagged, not removed
+- **Breadth-of-coverage gate** — reads clumped at one locus (PCR-dup / low-complexity / cross-map artifact) are graded out using the Lander–Waterman expected breadth ([`coverage.py`](pathogeniq/coverage.py))
+- **Evidence grading (A/B/C/X)** — specimen-aware read floors, CI width, NTC tier cap (Grade A requires a same-run control), contaminant demotion, cross-mapping dedup
+- **AMR + virulence** — ABRicate vs CARD (resistance) and VFDB (virulence factors)
+- **Spike-in absolute quantification** — anchor reads to a known spike to report copies / copies-per-volume ([`quantify.py`](pathogeniq/quantify.py))
+- **Specimen types** — blood, CSF, BAL, tissue, and **air** (bioaerosol), each with its own contaminant priors and read floors
+
+**Open-world arm (opt-in, for air surveillance and novel pathogens)**
+
+- **Novelty trigger** (`--novelty`) — classify reads against a broad Kraken2 DB; the unclassified "dark-matter" fraction flags content with no reference
+- **Viral arm** (`--viral`) — assemble → geNomad (viral ID + ICTV taxonomy) → CheckV (completeness). Air pathogens are viral-heavy and the targeted/MAG arms are blind to them
+- **Assembly / MAG recovery** (`--assemble`) — MEGAHIT → MetaBAT2 → CheckM → GTDB-Tk recovers reference-free genomes
+- **Pathogenicity triage** — separates a novel *pathogen* from a novel *environmental* microbe via VFDB/CARD markers on the contigs + phylo-proximity to known pathogens
+- **Open-world grading** — MAGs and viral contigs get the same A/B/C/X grade (from completeness + contamination + marker signal), capped at B (no same-run NTC for an assembled genome)
+
+**Reports** — JSON + TSV always; PDF + HTML clinical reports.
 
 ---
 
-## Pipeline Overview
+## Pipeline
 
 ```
-FASTQ (SR or LR)
-     │
-     ▼
- ┌─────────┐    fastp (SR) / Chopper (LR)
- │  QC     │──→ quality trim, adapter removal, length filter
- └─────────┘
-     │
-     ▼
- ┌──────────────┐    BWA-MEM2 (SR) / minimap2 (LR)
- │ Host removal │──→ subtract GRCh38 + PhiX reads
- └──────────────┘
-     │
-     ▼
- ┌─────────────────┐    sourmash sketch + SBT search
- │ Sketch screening│──→ 20k+ genomes → 50–200 candidates  (< 60 s)
- └─────────────────┘
-     │
-     ▼
- ┌──────────────────┐    minimap2 per candidate
- │ Targeted alignment│──→ multi-mapping read matrix
- └──────────────────┘
-     │
-     ▼
- ┌──────────────────┐    EM + bootstrap (n=100)
- │ EM abundance     │──→ θ estimates + 95% CI per organism
- └──────────────────┘
-     │
-     ▼
- ┌─────────────────┐    ABRicate + CARD
- │ AMR screening   │──→ resistance genes per organism
- └─────────────────┘
-     │
-     ▼
- ┌─────────────────┐    Grade A/B/C/X per organism
- │ Clinical report │──→ JSON + TSV + PDF report
- └─────────────────┘
+FASTQ (short or long)
+   │
+   ▼  QC ........................ fastp (short) / Chopper (long)
+   ▼  Host removal .............. BWA-MEM2 (short) / minimap2 (long) vs GRCh38
+   ▼  PhiX removal .............. minimap2 vs the Illumina PhiX spike-in (NC_001422)
+   ▼  Novelty screen [--novelty]  Kraken2 broad DB → unclassified fraction
+   ▼  Sketch screen ............ sourmash MinHash + SBT → candidate shortlist
+   ▼  Targeted alignment ....... minimap2 per candidate → read×organism matrix
+   │                             + breadth-of-coverage per organism
+   ▼  EM abundance ............. EM + bootstrap (n=100) → θ + 95% CI
+   ▼  AMR + virulence .......... ABRicate vs CARD + VFDB
+   ▼  NTC background ........... NB upper-tail test; flag-not-subtract dual-use taxa
+   ▼  Spike quant [--spike-*] .. absolute copies / copies-per-volume
+   ▼  Grading ................. A/B/C/X: read floor · CI · NTC tier cap
+   │                            · breadth gate · cross-map · contaminant prior
+   │
+   ├─ Open-world arm [--assemble] : MEGAHIT → MetaBAT2 → CheckM → GTDB-Tk
+   │                                → pathogenicity triage → open-world grade
+   ├─ Open-world arm [--viral]    : MEGAHIT → geNomad → CheckV → open-world grade
+   │
+   ▼  Report .................. JSON + TSV + PDF + HTML
 ```
+
+Every external-tool stage is **non-blocking**: a missing tool or database degrades gracefully (the stage is skipped) rather than failing the run.
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Clone
 git clone https://github.com/alvin8-git/PathogenIQ.git
 cd PathogenIQ
 
-# 2. Create environment
-conda create -n pathogeniq python=3.11
+# Core environment (pins the always-on tools + Python deps)
+conda env create -f environment.yml
 conda activate pathogeniq
+pip install -e ".[dev]"
 
-# 3. Install bioinformatics tools
-conda install -c bioconda bwa-mem2 minimap2 samtools fastp sourmash ncbi-genome-download
-
-# 4. Install PathogenIQ
-pip install -e .
-```
-
-**Verify installation:**
-```bash
 pathogeniq --help
 ```
 
----
-
-## Database Setup
-
-Run all three scripts concurrently in separate terminals (~90 min total on a 1 Gbps connection):
+The **open-world arm tools** (geNomad, CheckV, ABRicate) require `numpy<2` and conflict with the core env's NumPy-2 stack, so they live in **isolated conda envs** and are symlinked/wrapped onto `PATH`. One script sets them up:
 
 ```bash
-# Terminal 1 — ZymoBIOMICS validation DB (~5 min)
-bash scripts/01_download_zymo_db.sh 16
-
-# Terminal 2 — Full Tier-1 pathogen DB (~30–90 min, ~66 genomes)
-python scripts/02_download_tier1_db.py --threads 16
-
-# Terminal 3 — Human reference GRCh38 + BWA-MEM2 index (~90 min, needs ~64 GB RAM)
-bash scripts/03_download_human_ref.sh 16
+bash scripts/13_setup_viral_env.sh     # geNomad + CheckV env + DBs (~3 GB), CLIs linked in
 ```
 
-See [`scripts/README.md`](scripts/README.md) for full details, accession tables, and alternative pre-built database sources.
+(ABRicate is set up the same way — its own env + a `PATH` wrapper — because it is a Perl/BLAST tool. See [`environment.yml`](environment.yml) for the exact commands.)
+
+---
+
+## Database setup
+
+```bash
+bash   scripts/01_download_zymo_db.sh 16          # ZymoBIOMICS validation DB (~5 min)
+python scripts/02_download_tier1_db.py --threads 16  # Tier-1 clinical DB (~110 pathogen genomes)
+bash   scripts/03_download_human_ref.sh 16          # GRCh38 + index (~90 min, ~64 GB RAM)
+```
+
+Optional databases for the open-world arm: a broad **Kraken2** DB (novelty), **geNomad** + **CheckV** DBs (viral, fetched by `scripts/13`). The heavy **GTDB-Tk** DB (~110 GB, for MAG taxonomy) is deliberately **not** part of the core install — it is a triggered Tier-2 extra. See [`scripts/README.md`](scripts/README.md).
 
 ---
 
 ## Usage
 
-### Run the full pipeline
+### Clinical sample (blood)
 
 ```bash
-export HUMAN_REF=$(pwd)/databases/human_ref/GRCh38_decoy.fa
-export TIER1_DB=$(pwd)/databases/zymo_tier1/zymo_tier1.sbt.zip
-
 pathogeniq run \
-  --input sample.fq.gz \
-  --output results/sample \
-  --db "${TIER1_DB}" \
-  --host-ref "${HUMAN_REF}" \
-  --specimen blood \
-  --read-type short \
-  --threads 16
+  --input sample.fq.gz --output results/sample \
+  --db databases/tier1/tier1_pathogens.sbt.zip \
+  --host-ref /path/to/GRCh38/hg38.fa \
+  --specimen blood --read-type short --threads 16
 ```
 
-### Output files
+With a batch-matched NTC (the only way to reach Grade A):
 
-```
-results/sample/
-├── report/
-│   ├── pathogeniq_report.json   # Structured clinical report
-│   ├── pathogeniq_report.tsv    # Tabular summary
-│   └── pathogeniq_report.pdf    # Formatted clinical PDF
-├── qc/                          # fastp HTML + JSON
-├── host_removed.fq.gz           # Microbial reads only
-└── alignments/                  # Per-organism PAF files
+```bash
+pathogeniq run ... --ntc ntc_blank.fq.gz
 ```
 
-### Report fields
+### Air / bioaerosol surveillance (full open-world)
 
-| Field | Description |
+```bash
+pathogeniq run \
+  --input air_filter.fq.gz --output results/air \
+  --db databases/tier1/tier1_pathogens.sbt.zip \
+  --host-ref /path/to/GRCh38/hg38.fa \
+  --specimen air --read-type short \
+  --background air_ntc.tsv \
+  --novelty --viral --threads 16
+```
+
+### Key options
+
+| Option | Effect |
 |---|---|
-| `organism` | Species name |
-| `accession` | Reference genome accession |
-| `abundance_pct` | EM-estimated relative abundance |
-| `ci_lower` / `ci_upper` | Bootstrap 95% confidence interval |
-| `mapped_reads` | Reads assigned by EM |
-| `grade` | Evidence grade: A (high), B (moderate), C (low), X (insufficient) |
-| `contaminant_risk` | Flagged if organism is a known specimen-specific contaminant |
-| `amr_genes` | Detected antimicrobial resistance genes linked to this organism |
-| `specimen` | Specimen type used for grading thresholds |
+| `--specimen blood\|csf\|bal\|tissue\|air` | Selects read floors + contaminant priors |
+| `--read-type short\|long` | fastp+BWA-MEM2 vs Chopper+minimap2 |
+| `--ntc FASTQ` | Batch-matched NTC → Tier-1 background (enables Grade A) |
+| `--background TSV` | Pooled/precomputed background → Tier-2 (capped at B) |
+| `--no-background` | Disable background correction (Tier-3, uncorrected) |
+| `--novelty` | Open-world Kraken2 unclassified-fraction trigger |
+| `--viral` | Viral arm (geNomad + CheckV) |
+| `--assemble` | Assembly/MAG arm + pathogenicity triage |
+| `--spike-taxon / --spike-copies / --sample-volume` | Absolute quantification |
+| `--no-pdf` | Skip the PDF (JSON/TSV/HTML still written) |
+
+### Report
+
+`results/<sample>/report/` holds `pathogeniq_report.{json,tsv,pdf,html}`. The JSON has a `findings` array (targeted hits with grade, `breadth_ratio`, NTC tier, AMR/virulence, absolute copies) plus optional `novelty`, `viral`, `mags`, and `pathogenicity` blocks — every hit, targeted or open-world, carries an A/B/C/X grade.
 
 ---
 
 ## Validation
 
-PathogenIQ ships with integration tests against the ZymoBIOMICS D6300 community standard (8 bacteria at 12% + 2 yeasts at 2% gDNA abundance):
+PathogenIQ's design decisions are driven by real validation runs, not intuition. The full record is in [`Documentation.md`](Documentation.md) §6 and the `docs/` notes.
+
+| Validation | Data | Result | Influenced |
+|---|---|---|---|
+| Mock standard | ZymoBIOMICS D6300 (8 bacteria + 2 yeast) | all members detected, abundance within tolerance | core grading thresholds |
+| Held-out grading | CAMI II (mouse-gut/marine/strain) + HMP (skin/airway/oral) | precision **~45×** over raw Kraken2 at preserved recall, 9 unseen communities | grading wedge generalises |
+| Dispersion prior | spike-free kitome blanks, leave-one-out | FPR 30–65× α at **every** dispersion → coverage, not the prior, is the limit | Tier-2 → Grade B cap |
+| Air concordance | Jeilu et al. 2025 aircraft filters (PRJNA1228129) | Zymo spike recall 6/10; air NTC over-subtracted real E. coli/Pseudomonas | **flag-not-subtract** for dual-use pathogens |
+| Viral arm | in-silico spike (T4, Lambda, SARS-CoV-2 → real air background) | **100% recall (3/3)**, correct ICTV lineage | confirmed the viral arm end-to-end; caught a silent `run_megahit` bug |
+
+Run the mock-standard integration tests:
 
 ```bash
-export HUMAN_REF=$(pwd)/databases/human_ref/GRCh38_decoy.fa
-export TIER1_DB=$(pwd)/databases/zymo_tier1/zymo_tier1.sbt.zip
-
-pytest tests/integration/ -v -m integration
+HUMAN_REF=... TIER1_DB=... pytest tests/integration/ -v -m integration
 ```
-
-**Validation checks:**
-- All 10 community members detected
-- Measured abundance within 20% relative error of expected
-- No Grade A false positives outside the ZymoBIOMICS panel
 
 ---
 
 ## Development
 
 ```bash
-# Install dev dependencies
 pip install -e ".[dev]"
-
-# Run unit tests
-pytest tests/ -v
-
-# Lint
+pytest tests/ -v            # ~180 unit tests, no external tools needed (subprocess mocked)
 ruff check pathogeniq/ tests/
-
-# Type check
 mypy pathogeniq/
 ```
 
-### Project structure
+### Module map
 
-```
-pathogeniq/
-├── config.py        # ReadType, SpecimenType enums; PipelineConfig dataclass
-├── qc.py            # fastp / Chopper wrapper
-├── host_remove.py   # BWA-MEM2 / minimap2 host subtraction
-├── sketch.py        # sourmash sketch + SBT search
-├── align.py         # Targeted alignment (minimap2)
-├── em.py            # EM abundance estimation + bootstrap CI
-├── report.py        # Evidence grading + JSON/TSV output
-├── contaminants.py  # Specimen-aware contaminant prior registry
-├── amr.py           # ABRicate + CARD resistance gene detection
-├── pdf_report.py    # ReportLab clinical PDF generator
-└── cli.py           # Click CLI entry point
-
-scripts/
-├── 01_download_zymo_db.sh       # ZymoBIOMICS 10-genome DB
-├── 02_download_tier1_db.py      # Full ~66-genome clinical DB
-├── 03_download_human_ref.sh     # GRCh38 + BWA-MEM2 / minimap2 index
-└── README.md                    # Database setup guide
-
-tests/
-├── integration/
-│   └── test_zymo_validation.py  # ZymoBIOMICS D6300 end-to-end tests
-└── test_*.py                    # Unit tests (all stages)
-```
+| Module | Role |
+|---|---|
+| `config.py` | `ReadType` / `SpecimenType` enums; `PipelineConfig` |
+| `qc.py`, `host_remove.py` | QC (fastp/Chopper) + host & PhiX removal |
+| `sketch.py`, `align.py`, `em.py` | sketch screen → targeted alignment (+coverage) → EM |
+| `coverage.py` | breadth-of-coverage (Lander–Waterman) |
+| `background.py` | NB NTC background + dual-use flag-not-subtract |
+| `contaminants.py`, `crossmap.py` | specimen contaminant priors; cross-mapping dedup |
+| `report.py` | grading (targeted + open-world), JSON/TSV |
+| `amr.py`, `quantify.py` | AMR/virulence; spike-in absolute quantification |
+| `novelty.py` | open-world novelty trigger (Kraken2) |
+| `assembly.py` | MEGAHIT→MetaBAT2→CheckM→GTDB-Tk MAG arm |
+| `viral.py` | geNomad + CheckV viral arm |
+| `pathogenicity.py` | pathogen-vs-environmental triage of MAGs |
+| `pdf_report.py`, `html_report.py` | clinical report renderers |
+| `benchmark.py` | Kraken2 grading adapter for the held-out benchmark |
+| `cli.py` | Click entry point orchestrating all stages |
 
 ---
 
-## Roadmap
+## Status & roadmap
 
-- [x] Plan 2: Clinical interpretation engine (AMR overlay via ABRicate+CARD, PDF report)
-- [ ] Plan 3: Nextflow orchestration (local Docker, SLURM, AWS Batch)
-- [ ] Plan 4: Validation framework (ROC curves, benchmark suite)
-- [ ] Web dashboard for clinical users
-- [ ] FHIR-compatible report export
+Implemented: targeted core, NTC tiered grading, cross-mapping dedup, breadth gate, AIR specimen + air kitome priors, AMR + VFDB virulence, spike-in absolute quantification, and the full open-world arc (novelty → viral → MAG → pathogenicity triage → open-world grading). The viral arm is validated end-to-end (100% in-silico recall); the bacterial-MAG path is code-complete and unit-tested but needs the GTDB-Tk DB installed to run on real data.
+
+Next: calibrate provisional cutoffs (breadth ratio, open-world completeness bands, air read floors) on labeled data; prospective batch-matched-NTC studies for clinical Grade-A; optional GTDB arm install.
 
 ---
 
-## Citation
+## Citation & license
 
-If you use PathogenIQ in your research, please cite:
+PathogenIQ — a sketch-first clinical-metagenomics pipeline with NTC-aware grading and an open-world air-surveillance arm. *Manuscript in preparation.* MIT License — see [LICENSE](LICENSE).
 
-```
-PathogenIQ: A sketch-first clinical metagenomics pipeline with EM abundance estimation.
-[Manuscript in preparation]
-```
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
+> **Research use only.** Not a validated in-vitro diagnostic. Findings must be corroborated with orthogonal testing and clinical context.

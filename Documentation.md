@@ -115,6 +115,24 @@ PathogenIQ uses a containment threshold (default: 1%) to shortlist candidate org
 
 PathogenIQ parses PAF records into a binary matrix where rows are reads and columns are organisms. A cell is 1 if the read maps to that organism with sufficient quality, 0 otherwise. This matrix captures multi-mapping: a single read may have 1s in multiple columns if it aligns to multiple closely related genomes.
 
+#### Stage 4.5: Breadth-of-Coverage Gate
+
+**Module**: `pathogeniq/coverage.py`
+
+**Why it matters**: Read count alone cannot tell a real organism from an artifact —
+100 reads piled at one locus (PCR duplicate, low-complexity region, or cross-mapping
+from a relative) look identical, by count, to 100 reads spread across the genome.
+
+**Science**: From the targeted-alignment PAF (which records read *positions*, not just
+counts), PathogenIQ computes each organism's observed breadth (`covered_bases /
+genome_length`) and compares it to the **Lander–Waterman expected breadth**
+`1 − e^(−depth)` for its sequencing depth. The ratio is depth-normalised, so it works
+at any depth: `~1` means reads are spread as expected (real); `≪1` means they are
+clumped far below expectation (artifact). A finding whose ratio falls below 0.25 is
+graded **X**. Validated on real Zymo-spike alignments, genuine organisms score
+0.79–0.96 — including a 0.03%-abundance member at 0.85 — so the gate catches clumped
+artifacts without touching real low-abundance hits.
+
 #### Stage 5: EM Abundance Estimation
 
 **Algorithm**: Expectation-Maximization with bootstrap confidence intervals
@@ -142,7 +160,7 @@ This converges to maximum-likelihood estimates of the relative abundances θ, un
 | **A** | Sufficient reads for specimen type + narrow CI (≤15 pp) + not a contaminant + **batch-matched NTC available (Tier 1)** | High-confidence pathogen. Action likely warranted. |
 | **B** | Sufficient reads + not a contaminant, but CI wider than 15 pp **or no batch-matched NTC (Tier 2/3)** | Probable pathogen. Consider clinical context. |
 | **C** | Sufficient reads, but known contaminant or uncertain origin | Possible pathogen / contaminant. Corroborate with culture or clinical picture. |
-| **X** | Insufficient reads for specimen type, **degenerate statistics** (NaN/inf/negative), **or flagged as a cross-mapping artifact / NTC background** | Insufficient evidence. Do not act on this finding alone. |
+| **X** | Insufficient reads for specimen type, **degenerate statistics** (NaN/inf/negative), **low breadth-of-coverage** (clumped artifact, §3 Stage 4.5), **or flagged as a cross-mapping artifact / NTC background** | Insufficient evidence. Do not act on this finding alone. |
 
 The specimen-dependent read thresholds reflect biological prior probability: blood and CSF normally have very few circulating organisms, so even 2–3 reads of a pathogen may be significant. BAL and tissue samples contain abundant commensal flora, so higher thresholds prevent false positives.
 
@@ -240,6 +258,23 @@ Two empirical studies (reproducible via `scripts/10_validate_dispersion.py` and 
 
 The packaged `pathogeniq/data/background_default.tsv` is pooled from **genuine non-spiked negative-control shotgun datasets** (`scripts/11_pool_blank_background.py`), classified against the same Tier-1 reference DB so the per-organism rates are directly comparable. Because the dispersion study showed coverage is the binding constraint, the build deliberately pools blanks from **multiple independent labs and reagent types** to widen taxon coverage and dilute any single study's idiosyncrasy. The datasets are listed in §6.
 
+### 5.6 Flag-not-subtract for dual-use pathogens
+
+Background subtraction has a failure mode the air validation exposed (§6.6): if a
+control is contaminated with an organism that is **both** common kitome **and** a
+genuine pathogen — *E. coli*, *Pseudomonas*, *Klebsiella*, *Shigella*, *Salmonella*,
+*S. aureus*, *Acinetobacter*, *Enterobacter* — then subtracting the background
+*erases a real, treatable infection*. The air NTC did exactly this to genuine Zymo
+*E. coli* and *P. aeruginosa*.
+
+The fix (`background.py`) is policy, not statistics: for this curated **dual-use**
+set, a taxon that tests as background is **not dropped** but **flagged**
+(`contaminant_risk=True`, which demotes its grade). Pure contaminants
+(*S. epidermidis*, *C. acnes*) are still subtracted normally. The principle: a
+suspect control may *lower confidence* in a treatable pathogen, but it may never make
+the pathogen disappear. This mirrors the AIR contaminant prior (§4), which is
+deliberately *not* genus-broad on *Pseudomonas*/*Acinetobacter* for the same reason.
+
 ---
 
 ## 6. Validation & Benchmarking
@@ -308,7 +343,152 @@ A single floor learned on a mock standard lifts precision ~45× across **nine he
 
 ---
 
-## 7. Future Directions
+### 6.6 Air-surveillance datasets — Jeilu et al. 2025 aircraft filters
+
+To move the NTC backbone from clinical fluids to **air / bioaerosol** (an even
+lower-biomass, even more kitome-dominated regime), PathogenIQ validates against the
+aircraft-cabin metagenomics study of **Jeilu et al. 2025** (*Microbiome* 13:249,
+BioProject **PRJNA1228129**), downloaded by `scripts/04_download_validation_data.py`:
+
+| Subset | Role |
+|--------|------|
+| 6 aircraft-filter environmental samples | Concordance vs the paper's published taxa (agreement, not scored truth) |
+| 6 "control" runs (unworn-mask environmental + enrichment) | Pooled into an **air NTC** background (`scripts/11`) |
+| 2 spike controls (ZymoBIOMICS D6300 on a face-mask section) | The only **scored** air detection test (known truth) |
+
+Two findings from these runs directly changed the design, and both are documented
+because they bound what the air pipeline can claim:
+
+1. **The air "NTC" over-subtracted real pathogens.** Scoring the Zymo spike against
+   the pooled air background recovered only **6/10** members — *E. coli*,
+   *P. aeruginosa*, and *S. cerevisiae* were erased because those exact taxa dominate
+   the control runs. The controls are **environmental exposure masks, not reagent
+   blanks**, so they legitimately carry airborne + skin microbiota. Reading the
+   paper confirmed it never computationally subtracts its controls (its only
+   "contaminant removal" is host + PhiX + adapter trimming). This is the empirical
+   origin of **flag-not-subtract** (§5.6): a contaminated control must never erase a
+   real treatable pathogen.
+2. **A foreign blank ≠ a same-run NTC.** Reagent contamination is lot- and
+   run-specific; index hopping and well-to-well carryover are properties of *your*
+   flow cell. This reinforces the Tier-1/Tier-2 split (§5.3): a public or pooled air
+   blank can never grant Grade A.
+
+### 6.7 Viral-arm validation — in-silico spike-in (gold truth)
+
+The air data cannot validate the viral arm (§7.3): it is DNA sequencing (no RNA
+respiratory viruses), the Zymo standard has no viral members, and the filters carry
+only unlabelled phage. So gold truth is generated synthetically by
+`scripts/12_viral_insilico_spikein.py`: simulate reads (wgsim) from known viral
+genomes — **Escherichia phage T4, phage Lambda, and SARS-CoV-2** — mix them into a
+real aircraft-filter background, assemble, run the viral arm, and score geNomad
+recall (correct ICTV lineage) + CheckV completeness against truth.
+
+First scored run (2026-06-23): **100% recall (3/3)**. All three genomes recovered
+with correct lineage (T4→Straboviridae, Lambda→Caudoviricetes, SARS-CoV-2→
+Coronaviridae) from 56,442 assembled contigs amid the real air background, including
+the respiratory RNA virus classified from its genome. The run also surfaced and
+fixed a real bug — `run_megahit` silently produced nothing when its output parent
+directory did not pre-exist (megahit's `os.mkdir` is single-level), which had made
+both `--assemble` and `--viral` no-op on every run. This is the value of an
+end-to-end harness that asserts a positive result rather than trusting a non-blocking
+"0 found."
+
+---
+
+## 7. Open-World Detection & Air Surveillance (the air wedge)
+
+The targeted core (§3) is **closed-world**: it can only find genomes already in the
+~110-pathogen Tier-1 DB. That is a feature for clinical fluids (you *want* to ignore
+environmental reads), but air surveillance has a different mandate — detect
+*possible* pathogens, including ones with no reference, while still not cataloguing
+every environmental microbe. The design question, settled in an office-hours review
+(`docs/air-pathogen-wedge-design-2026-06-22.md`), was: **what is the minimum that
+adds open-world reach without exploding the pipeline?**
+
+### 7.1 The wedge decision — why not "just assemble everything"
+
+The obvious answer — assemble all reads, bin into genomes, classify with GTDB-Tk —
+is exactly what the Jeilu paper does, and it needs a **~110 GB GTDB-Tk database**.
+But de-novo cataloguing serves *environmental discovery* (naming *Sphingomonas*,
+*Methylobacterium*), which is the **opposite** of pathogen detection. The heaviest
+dependency in the pipeline would serve the goal we explicitly do not have. So the
+wedge keeps the assembly/MAG arm as a **triggered Tier-2 extra** (CLI-gated, GTDB DB
+not installed by default) and adds two cheap, pathogen-focused pieces instead.
+
+### 7.2 Novelty trigger — staying un-blind cheaply (`novelty.py`)
+
+**Tool: Kraken2** (broad Standard DB). **Why:** the cheapest way to answer "is there
+anything here with no reference?" without the 110 GB assembly arm. Kraken2 classifies
+every non-host read against a broad RefSeq-scale database by exact k-mer match; the
+**fraction of reads it cannot classify** is a direct "dark-matter" signal. Pointed at
+a *broad* DB (not the narrow Tier-1 DB — that would mark everything off-target as
+unclassified and falsely inflate novelty), a high unclassified fraction is the gate
+that says "spin up the expensive discovery arms." It reuses the Kraken2 DB already on
+disk for the benchmark baseline (§6.5), so it costs ~8–14 GB, not 110 GB.
+
+### 7.3 Viral arm — air pathogens are viral-heavy (`viral.py`)
+
+**Tools: geNomad → CheckV.** **Why:** airborne transmission is dominated by viruses
+(influenza, SARS-CoV-2, RSV), and both the targeted DB and the bacterial MAG arm are
+blind to them. The arm runs on assembled contigs:
+
+- **geNomad** identifies viral sequences (hallmark genes + a neural-net classifier)
+  and assigns **ICTV taxonomy** — chosen over older tools (VirSorter) for its
+  integrated taxonomy and calibrated scoring.
+- **CheckV** estimates per-contig genome **completeness**, so a near-complete viral
+  genome is distinguished from a short fragment.
+
+**Source caveat (honest):** DNA metagenomics captures DNA viruses + integrated
+proviruses, **not** RNA viruses — those need an RNA-seq library. The arm is
+source-agnostic (it classifies whatever contigs it is given), so it *will* find RNA
+viruses if the wet-lab produced a metatranscriptome; the limitation is sample prep,
+not software.
+
+### 7.4 Assembly / MAG recovery — reference-free genomes (`assembly.py`)
+
+**Tools: MEGAHIT → MetaBAT2 → CheckM → GTDB-Tk** (the field-standard MAG chain,
+matching the Jeilu paper for concordance). MEGAHIT assembles, MetaBAT2 bins contigs
+into metagenome-assembled genomes (MAGs), CheckM scores completeness/contamination
+(retain ≥50% / ≤10%, the paper's thresholds), and GTDB-Tk places each MAG in the
+bacterial tree even when no species reference exists. Every step is non-blocking and
+the arm is off by default (`--assemble`) because of the GTDB DB cost.
+
+### 7.5 Pathogenicity triage — pathogen vs environmental (`pathogenicity.py`)
+
+This is the discriminator that makes open-world output *actionable*. A novel MAG
+matters as a **pathogen** only if it (a) carries pathogenicity **markers** — ABRicate
+VFDB (virulence) or CARD (AMR) genes on its own contigs — or (b) sits next to a known
+pathogen by **GTDB lineage** (the known-pathogen set is derived from the Tier-1 DB's
+`name_map.json`). The verdict — `PATHOGEN_CANDIDATE` (markers) / `PATHOGEN_ADJACENT`
+(lineage only) / `ENVIRONMENTAL` (neither) — is what keeps *Sphingomonas* and
+*Methylobacterium* from drowning the clinician in benign novelty. Markers dominate:
+a novel genome with virulence/AMR genes is concerning regardless of taxonomy.
+
+### 7.6 Open-world grading — one A/B/C/X scale (`report.py::grade_open_world`)
+
+Reference-free hits have no read-count/NTC/CI, so they cannot use the targeted
+`grade()`. They are graded instead on **genome-quality evidence**: completeness
+(CheckM/CheckV), contamination (>10% → X, chimeric bin), and a supporting signal
+(viral hallmark genes / pathogenicity markers rescue a hit with no completeness QC →
+C). They are **capped at B** by design — Grade A means NTC-controlled detection, which
+an assembled genome by definition lacks. This preserves the same invariant the
+targeted grader enforces, so a clinician reads one consistent confidence vocabulary
+across targeted findings, MAGs, and viral contigs.
+
+### 7.7 Tooling isolation — keeping the core env intact
+
+geNomad, CheckV, and ABRicate require `numpy<2` (or, for ABRicate, a Perl/BLAST
+toolchain) and conflict with the core env's NumPy-2 stack (SciPy, pandas). Installing
+them into the pipeline env once silently downgraded NumPy and broke SciPy. The fix,
+now standard, is to install each external tool in its **own conda env** and expose it
+on `PATH` via a symlink (geNomad/CheckV — their console-scripts self-anchor to the
+right Python) or a small wrapper (ABRicate — forces its env's Perl + DBs). The
+pipeline shells out to them as plain binaries, exactly as it does for samtools or
+minimap2. `scripts/13_setup_viral_env.sh` automates the viral toolchain.
+
+---
+
+## 8. Future Directions
 
 ### Plan 3: Nextflow Orchestration
 
@@ -338,7 +518,7 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 
 ---
 
-## 8. Glossary
+## 9. Glossary
 
 | Term | Definition |
 |------|------------|
@@ -371,10 +551,19 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 | **CSF** | Cerebrospinal fluid; sample from the central nervous system |
 | **GRCh38** | Reference genome assembly for Homo sapiens (Genome Reference Consortium Human build 38) |
 | **ZymoBIOMICS** | Commercial mock microbial community standard with known composition |
+| **Breadth of coverage** | Fraction of a genome covered by reads; compared to the Lander–Waterman expectation to flag clumped artifacts |
+| **Dual-use taxon** | An organism that is both common kitome and a genuine pathogen; flagged rather than subtracted by the background |
+| **Open-world detection** | Finding organisms with no entry in the reference DB (novel/uncatalogued), via novelty trigger + assembly + viral arm |
+| **MAG (Metagenome-Assembled Genome)** | A genome reconstructed by assembling and binning reads, without a reference |
+| **geNomad** | Tool that identifies viral (and plasmid) sequences in assemblies and assigns ICTV taxonomy |
+| **CheckV / CheckM** | Completeness/contamination estimators for viral genomes (CheckV) and bacterial MAGs (CheckM) |
+| **GTDB-Tk** | Genome Taxonomy Database toolkit; places a MAG in the bacterial/archaeal tree |
+| **ICTV** | International Committee on Taxonomy of Viruses; the viral lineage standard geNomad reports |
+| **Kitome / dark matter** | Reagent-derived background DNA (kitome) and the unclassified read fraction (dark matter, the novelty signal) |
 
 ---
 
-## 9. References
+## 10. References
 
 1. **MinHash**: Broder, A. Z. (1997). On the resemblance and containment of documents. *Proceedings of Compression and Complexity of Sequences*.
 2. **Scaled MinHash for genomics**: Brown, C. T., & Irber, L. (2016). sourmash: a library for MinHash sketching of DNA. *Journal of Open Source Software*.
@@ -392,6 +581,6 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 
 ---
 
-*Last updated: 2026-06-22*
+*Last updated: 2026-06-23*
 
-*Design changes reflected: Plan 4 NTC-aware tiered grading, negative-binomial background subtraction (`background.py`), cross-mapping dedup (`crossmap.py`), the Kraken2 grading adapter and multi-community held-out benchmark (`benchmark.py`, `scripts/06`/`08`/`09`/`10`/`11`), and the dispersion-prior validation. See also `docs/benchmark-results-2026-06-21.md` and `docs/dispersion-validation-2026-06-22.md`.*
+*Design changes reflected: Plan 4 NTC-aware tiered grading + NB background subtraction (`background.py`) with **flag-not-subtract** for dual-use pathogens (§5.6); cross-mapping dedup (`crossmap.py`); the **breadth-of-coverage gate** (§3 Stage 4.5, `coverage.py`); the **AIR specimen type** + air kitome priors; AMR + **VFDB virulence** and **spike-in absolute quantification** (`amr.py`, `quantify.py`); and the full **open-world / air-surveillance arm** (§7): novelty trigger (`novelty.py`), viral arm (`viral.py`), MAG recovery (`assembly.py`), pathogenicity triage (`pathogenicity.py`), and open-world grading (`report.py`). Validation added: air concordance + the air-NTC over-subtraction finding (§6.6) and the viral in-silico spike-in at 100% recall (§6.7). See also `docs/air-open-world-detection-2026-06-23.md`, `docs/air-pathogen-wedge-design-2026-06-22.md`, `docs/air-concordance-validation-2026-06-22.md`, `docs/benchmark-results-2026-06-21.md`, and `docs/dispersion-validation-2026-06-22.md`.*

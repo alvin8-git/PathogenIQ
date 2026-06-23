@@ -28,34 +28,43 @@ mypy pathogeniq/
 
 PathogenIQ is a clinical metagenomics pipeline. Each stage is a separate module that wraps an external bioinformatics tool and returns a typed dataclass.
 
-**Entrypoint:** `cli.py` is a `click` group; the `run` command orchestrates the pipeline. Required options: `--input` (FASTQ), `--output` (dir), `--db` (Tier-1 DB), `--host-ref`, `--specimen`. Notable extras: `--read-type short|long`, `--amr-db` (ABRicate DB, default `card`), `--no-pdf`, `--sketch-threshold`, `--n-bootstrap`.
+**Entrypoint:** `cli.py` is a `click` group; the `run` command orchestrates the pipeline. Required options: `--input` (FASTQ), `--output` (dir), `--db` (Tier-1 DB), `--host-ref`, `--specimen`. Notable extras: `--read-type short|long`, `--amr-db` (default `card`), `--ntc`/`--background`/`--no-background` (NTC tier), `--spike-taxon`/`--spike-copies`/`--sample-volume` (absolute quant), `--novelty`, `--viral`, `--assemble` (open-world arms), `--no-pdf`, `--sketch-threshold`, `--n-bootstrap`.
 
 **Pipeline flow:**
 ```
-QC (fastp/Chopper) → Host removal (BWA-MEM2/minimap2) → Sketch screen (sourmash)
-  → Targeted alignment (minimap2) → EM abundance → AMR screen (ABRicate)
+QC (fastp/Chopper) → Host removal (BWA-MEM2/minimap2) → PhiX removal (minimap2)
+  → [--novelty: Kraken2 broad DB] → Sketch screen (sourmash)
+  → Targeted alignment (minimap2, +breadth-of-coverage) → EM abundance
+  → AMR + virulence (ABRicate CARD/VFDB) → NTC background subtraction (background.py)
+  → [--spike-*: absolute quant] → Grading (A/B/C/X)
+  → [--assemble: MEGAHIT→MetaBAT2→CheckM→GTDB-Tk + pathogenicity triage]
+  → [--viral: MEGAHIT→geNomad→CheckV]
   → Report (JSON + TSV + PDF + HTML)
 ```
+The open-world arms (`--assemble`/`--viral`) run via `_discovery_arms()` in `cli.py` even when the targeted screen finds zero hits (a viral/novel-only sample still produces a report).
 
 **Key data contracts between stages:**
-- `PipelineConfig` (`config.py`) — single config dataclass passed to every stage; holds paths, `ReadType` (short/long), `SpecimenType` (blood/csf/bal/tissue), and tuning params
-- `EMResult` (`em.py`) — `abundances` array (sums to 1) + `n_reads`; produced by `em_abundance()` and consumed by `write_report()`
-- `AlignResult` (`align.py`) — `alignment_matrix` (reads × organisms binary array) + `organism_names`; bridges alignment → EM
-- `ReportEntry` (`report.py`) — one row per organism with lazy `grade` property; contaminant flag set externally by `flag_contaminants()`
-- `AMRHit` (`amr.py`) — `run_amr_screen()` converts reads to FASTA and runs ABRicate, mapping resistance genes back to `organism_names`; results are attached to the report
-- Report rendering: `report.py` writes JSON + TSV; `pdf_report.py` (`write_pdf_report`) and `html_report.py` (`write_html_report`) render the same `ReportEntry` rows into clinical PDF/HTML
+- `PipelineConfig` (`config.py`) — config dataclass passed to every stage; `ReadType` (short/long), `SpecimenType` (blood/csf/bal/tissue/**air**), paths, tuning params
+- `AlignResult` (`align.py`) — `alignment_matrix` + `organism_names` + `taxon_ids` + **`coverage`** (per-organism `CoverageStats`); bridges alignment → EM and feeds the breadth gate
+- `EMResult` (`em.py`) → consumed by `build_entries()`/`write_report()`
+- `BackgroundModel` (`background.py`) — per-taxon RPM rates + tier; `is_background()` (NB upper tail) zeroes out kitome, EXCEPT `is_dual_use()` taxa which are flagged not subtracted
+- `ReportEntry` (`report.py`) — one row per targeted organism; lazy `grade` property reads `breadth_ratio`, `contaminant_risk`, tier, crossmap
+- Open-world results: `MAG` (`assembly.py`), `ViralContig` (`viral.py`), `PathogenicityAssessment` (`pathogenicity.py`), `NoveltyResult` (`novelty.py`) — each graded by `grade_open_world()` (capped at B) and emitted as its own JSON block
+- `AMRHit`/`VirulenceHit` (`amr.py`); `SpikeInfo` (`quantify.py`)
+- Renderers: `report.py` (JSON+TSV), `pdf_report.py`, `html_report.py` share the same `ReportEntry` rows
 
-**Evidence grading** (`report.py` + `contaminants.py`):
-- Grade A/B/C/X is a property on `ReportEntry`, not a stored field
-- Grading uses specimen-specific minimum read thresholds (`_MIN_READS`) + CI width ≤ 0.15 for Grade A
-- `contaminants.py` holds `CONTAMINANT_PRIORS` — a per-`SpecimenType` list of common contaminant species; `flag_contaminants()` sets `contaminant_risk=True` via case-insensitive substring match, which demotes Grade A → B/C
+**Evidence grading** (`report.py` + `contaminants.py` + `coverage.py` + `crossmap.py`):
+- Grade A/B/C/X is a lazy property on `ReportEntry` (pure `grade(GradingInput)`)
+- Gates: specimen `_MIN_READS` floor · CI ≤ 0.15 + **Tier-1 NTC** for A · `breadth_ratio` < 0.25 → X · cross-mapping artifact → X · contaminant demotion
+- `contaminants.py::CONTAMINANT_PRIORS` is per-`SpecimenType` (AIR prior is deliberately NOT genus-broad on Pseudomonas/Acinetobacter so real pathogens aren't demoted)
+- Reference-free hits (MAGs/viral) use `grade_open_world()` — genome completeness + contamination + marker signal, capped at B
 
 **Read-type branching:**
 - Short reads: fastp for QC, BWA-MEM2 for host removal
 - Long reads: Chopper for QC, minimap2 for host removal
 - Both paths produce identical intermediate files; downstream stages are read-type agnostic
 
-**External tool dependencies:** fastp, Chopper, BWA-MEM2, minimap2, samtools, sourmash, abricate — must be on `PATH` (install via conda bioconda channel)
+**External tool dependencies:** core (fastp, Chopper, BWA-MEM2, minimap2, samtools, sourmash) via `environment.yml`. Optional/open-world: kraken2 + broad DB (novelty), abricate (AMR/VFDB/R4 markers), megahit/metabat2/checkm/gtdbtk (MAG arm), genomad/checkv (viral arm). geNomad/CheckV/abricate need `numpy<2` and live in **isolated conda envs** symlinked/wrapped onto `PATH` (`scripts/13_setup_viral_env.sh`) — never install them into the core env (it breaks SciPy). Every external stage is **non-blocking**: a missing tool/DB skips that stage rather than failing the run.
 
 ## Test structure
 
