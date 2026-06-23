@@ -273,6 +273,36 @@ def test_build_entries_sets_tier_and_filters_background(tmp_path):
     assert all(e.tier == 2 for e in entries)
 
 
+def test_open_world_grade_capped_at_b():
+    from pathogeniq.report import grade_open_world, OpenWorldGradingInput
+    # near-complete, clean genome -> B (NOT A: open-world has no same-run NTC)
+    assert grade_open_world(OpenWorldGradingInput(98.0, 1.0)) == EvidenceGrade.B
+    # solid genome at the B floor
+    assert grade_open_world(OpenWorldGradingInput(70.0, 5.0)) == EvidenceGrade.B
+    # partial (50-70%) -> C
+    assert grade_open_world(OpenWorldGradingInput(60.0, 2.0)) == EvidenceGrade.C
+    # fragmentary -> X
+    assert grade_open_world(OpenWorldGradingInput(30.0, 0.0)) == EvidenceGrade.X
+    # chimeric (high contamination) -> X even if complete
+    assert grade_open_world(OpenWorldGradingInput(95.0, 25.0)) == EvidenceGrade.X
+    # no completeness QC but a supporting signal -> C; none -> X
+    assert grade_open_world(OpenWorldGradingInput(None, None, supporting_signal=2)) == EvidenceGrade.C
+    assert grade_open_world(OpenWorldGradingInput(None, None, supporting_signal=0)) == EvidenceGrade.X
+
+
+def test_grade_mag_and_viral_adapters():
+    from types import SimpleNamespace
+    from pathogeniq.report import grade_mag, grade_viral
+    mag = SimpleNamespace(completeness=92.0, contamination=3.0)
+    assert grade_mag(mag, n_markers=1) == EvidenceGrade.B
+    # viral contig: CheckV completeness drives it; contamination axis is None
+    vc = SimpleNamespace(completeness=80.0, n_hallmarks=4)
+    assert grade_viral(vc) == EvidenceGrade.B
+    # viral contig with no CheckV estimate but hallmark genes -> C (real-but-unverified)
+    vc2 = SimpleNamespace(completeness=None, n_hallmarks=3)
+    assert grade_viral(vc2) == EvidenceGrade.C
+
+
 def test_breadth_ratio_gate_demotes_clumped_to_x():
     # enough reads + tight CI, but reads clumped far below expected breadth -> artifact (X)
     e = ReportEntry(

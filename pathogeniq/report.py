@@ -92,6 +92,62 @@ def grade(g: GradingInput) -> EvidenceGrade:
     return EvidenceGrade.B
 
 
+# --- Open-world grading (R5): one A/B/C/X scale for reference-free hits ---------
+# Reference-free hits (assembled MAGs, viral contigs) have no read-count / NTC /
+# CI, so they cannot use grade(). They are graded instead on genome-quality
+# evidence: completeness (CheckM bacterial / CheckV viral), contamination, and a
+# supporting signal (viral hallmark genes / pathogenicity markers). They are
+# CAPPED AT B — Grade A means NTC-controlled detection (a same-run control), which
+# an assembled genome by definition lacks. Thresholds mirror the paper's MAG
+# retention (>=50% completeness, <=10% contamination) and high-quality (>=90%/<=5%).
+_OW_COMPLETE_MIN = 50.0   # below this = fragmentary, non-gradeable
+_OW_COMPLETE_B = 70.0     # at/above this = a solid genome -> B (the open-world ceiling)
+_OW_MAX_CONTAM = 10.0     # above this = likely chimeric bin -> X
+
+
+@dataclass(frozen=True)
+class OpenWorldGradingInput:
+    completeness: float | None   # CheckM (bacterial) or CheckV (viral) % completeness
+    contamination: float | None  # CheckM contamination % (None for viral / not assessed)
+    supporting_signal: int = 0   # viral hallmark genes / pathogenicity markers
+
+
+def grade_open_world(g: OpenWorldGradingInput) -> EvidenceGrade:
+    """Grade a reference-free hit on the shared A/B/C/X scale. Capped at B: Grade A
+    is reserved for NTC-controlled targeted detection. Completeness is the spine; a
+    supporting signal (hallmarks/markers) rescues a hit with no completeness QC."""
+    comp = g.completeness
+    if comp is None:
+        # no CheckM/CheckV estimate (DB absent / not assessed): a recovered genome
+        # with a supporting signal is real-but-unverified (C); nothing else gradeable.
+        return EvidenceGrade.C if g.supporting_signal >= 1 else EvidenceGrade.X
+    if comp < _OW_COMPLETE_MIN:
+        return EvidenceGrade.X
+    if g.contamination is not None and g.contamination > _OW_MAX_CONTAM:
+        return EvidenceGrade.X
+    if comp >= _OW_COMPLETE_B:
+        return EvidenceGrade.B
+    return EvidenceGrade.C
+
+
+def grade_mag(mag, *, n_markers: int = 0) -> EvidenceGrade:
+    """Open-world grade for an assembly MAG (CheckM completeness/contamination +
+    pathogenicity marker count as supporting signal)."""
+    return grade_open_world(OpenWorldGradingInput(
+        completeness=mag.completeness, contamination=mag.contamination,
+        supporting_signal=n_markers,
+    ))
+
+
+def grade_viral(vc) -> EvidenceGrade:
+    """Open-world grade for a viral contig (CheckV completeness + geNomad hallmark
+    gene count as supporting signal)."""
+    return grade_open_world(OpenWorldGradingInput(
+        completeness=vc.completeness, contamination=None,
+        supporting_signal=(vc.n_hallmarks or 0),
+    ))
+
+
 @dataclass
 class ReportEntry:
     organism: str
@@ -296,6 +352,8 @@ def write_report(
             "sample_volume": spike_info.sample_volume,
             "found": spike_info.found,
         }
+    # R5: pathogenicity marker count per MAG feeds its open-world grade.
+    markers_by_mag = {a.name: a.n_virulence + a.n_amr for a in (pathogenicity or [])}
     if mags is not None:
         payload["mags"] = [
             {
@@ -305,6 +363,7 @@ def write_report(
                 "contamination": m.contamination,
                 "n_contigs": m.n_contigs,
                 "total_bp": m.total_bp,
+                "grade": grade_mag(m, n_markers=markers_by_mag.get(m.bin_id, 0)).value,
                 "fasta_path": str(m.fasta_path),
             }
             for m in mags
@@ -320,6 +379,7 @@ def write_report(
                 "n_hallmarks": v.n_hallmarks,
                 "completeness": v.completeness,
                 "checkv_quality": v.checkv_quality,
+                "grade": grade_viral(v).value,
             }
             for v in viral
         ]
