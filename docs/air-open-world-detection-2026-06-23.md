@@ -43,6 +43,31 @@ lineage) + CheckV completeness vs truth. Scoring logic is offline-verifiable
 This validates the *bioinformatic* arm; end-to-end air-virus capability still needs
 real RNA-seq air virome (a wet-lab decision).
 
+### Result — first scored run (2026-06-23): RECALL 100% (3/3)
+
+30× wgsim reads from each truth genome mixed into the SRR32514319 aircraft-filter
+background (~6.5 M reads), assembled (megahit → 56,442 contigs), geNomad + CheckV.
+geNomad called **190 viral contigs** (most are real background phage — bonus); all
+three spiked genomes recovered with correct ICTV lineage:
+
+| Genome | Expected | Recovered | CheckV completeness | geNomad lineage |
+|--------|----------|-----------|---------------------|-----------------|
+| Escherichia phage T4 | Straboviridae | ✅ | 21.6% | …Caudoviricetes;Straboviridae |
+| Escherichia phage Lambda | Caudoviricetes | ✅ | 76.2% | …Caudoviricetes |
+| SARS-CoV-2 | Coronaviridae | ✅ | 70.2% | …Nidovirales;Coronaviridae |
+
+Notes: detection (recall) is the headline — all 3 found, lineage correct, including
+the respiratory RNA virus classified from its genome amid real air-metagenome noise.
+T4's low completeness (21.6%) reflects megahit fragmenting its 169 kb genome at 30×,
+not a miss. This run also surfaced+fixed a real bug: `run_megahit` failed silently
+when `assembly/` didn't pre-exist (megahit's `os.mkdir` is single-level), which had
+made `--assemble` and `--viral` no-op on every run — caught only because the harness
+expected ≥3 contigs and got 0.
+
+**Tooling:** geNomad + CheckV live in a dedicated `genomad` conda env (numpy<2),
+CLIs symlinked into the pathogeniq env (`scripts/13_setup_viral_env.sh`). DBs at
+`databases/genomad_db` (v1.9) + `databases/checkv_db` (v1.5).
+
 ## JSON additions
 
 - `novelty`: `{total_reads, classified_reads, unclassified_reads, unclassified_fraction, n_species, top_taxa[], flagged}`
