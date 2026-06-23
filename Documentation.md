@@ -194,12 +194,14 @@ Antimicrobial resistance is a defining feature of modern clinical microbiology. 
 PathogenIQ uses ABRicate, a command-line tool that scans sequences against curated resistance databases. The default database is **CARD** (Comprehensive Antibiotic Resistance Database), which catalogues experimentally validated resistance genes with associated drug classes and mechanisms.
 
 The AMR module:
-1. Converts non-human reads from FASTQ to FASTA format
-2. Runs ABRicate with identity and coverage thresholds (default: 90% identity, 80% coverage)
-3. Parses the TSV output into structured `AMRHit` records
-4. Links each resistance gene to a detected organism by matching the sequence header against organism names
+1. Assembles the non-host reads once (MEGAHIT) and runs ABRicate over the **contigs** — not the raw reads
+2. Runs ABRicate (CARD for resistance, VFDB for virulence) at default 90% identity / 80% coverage
+3. Parses the TSV output into structured `AMRHit` / `VirulenceHit` records
+4. Links each gene to a detected organism by matching the sequence header against organism names
 
-AMR detection is intentionally **non-blocking**: if ABRicate is not installed, the pipeline proceeds without resistance information. This ensures the pipeline remains usable in environments where resistance databases have not yet been set up.
+**Why contigs, not reads.** ABRicate is a BLAST-over-assembly tool. Screening millions of short reads is both wrong (a resistance gene fragments across many reads, producing partial low-coverage hits) and catastrophically slow — measured on a 6.5 M-read air sample, abricate-on-reads took ~16 minutes *per database*, the single slowest stage in the pipeline. Assembling once and screening the ~tens-of-thousands of contigs is ~100× fewer sequences to align and yields clean, full-length gene calls. The same contig set is shared with the viral arm (§7.3), so assembly is paid for once.
+
+AMR detection is intentionally **non-blocking**: if ABRicate (or MEGAHIT) is unavailable, the pipeline proceeds without resistance information, so it stays usable wherever those tools have not been set up.
 
 ### PDF Clinical Report
 
