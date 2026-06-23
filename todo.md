@@ -16,7 +16,11 @@ Recent arc = airborne-pathogen detection + open-world (novel) capability.
   in the `--assemble` path. Viral tools isolated in a `genomad` env + symlinks
   (`scripts/13`); DBs installed. See `docs/air-open-world-detection-2026-06-23.md`.
 - Bugs fixed: `run_megahit` parent-dir (was no-op'ing `--assemble` AND `--viral`);
-  numpy-2 vs geNomad env conflict (pipeline restored; 177 tests pass).
+  numpy-2 vs geNomad env conflict (pipeline restored; 178 tests pass).
+- **Min-wedge completed:** `abricate` installed (isolated env + wrapper → unblocks
+  VFDB virulence, AMR, R4 markers); **breadth-of-coverage gate wired** into grading
+  (clumped reads → Grade X; validated on Zymo-spike PAFs). GTDB 100 GB arm left
+  uninstalled per the wedge design.
 
 **Next (priority order):**
 1. **R5 open-world grading** — unify reference-free hits (MAGs/viral/novel) into one
@@ -24,8 +28,8 @@ Recent arc = airborne-pathogen detection + open-world (novel) capability.
 2. **Validate R1 novelty** — needs the Kraken2 Standard DB (~50 GB) installed.
 3. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
    *Sphingomonas* / *Methylobacterium*, and exercise R4 triage on real MAGs.
-4. **Install abricate** — AMR + VFDB screens (incl. R4 markers) currently skip (not on PATH).
-5. Viral-contig pathogenicity triage (ARG-carrying phage); R4 currently bacterial MAGs only.
+4. Viral-contig pathogenicity triage (ARG-carrying phage); R4 currently bacterial MAGs only.
+5. Calibrate the breadth-ratio cutoff (0.25 provisional) + air read floors on labeled air data.
 6. Plan 6 leftovers (#4 BHI enrichment SOP, #5 strain ID, #7 diversity, #8 GTDB, #9
    overrepresented-seq trim); Plan 3 leftovers (3A extract, 3B AMRFinderPlus, 3C MLST).
 

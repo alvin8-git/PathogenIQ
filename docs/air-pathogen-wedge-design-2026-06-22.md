@@ -26,8 +26,14 @@ of it:**
 | Targeted pathogen DB (tier-1, ~110 + biothreat) | have | Narrow on purpose — "pathogens not environmental microbes" |
 | **NTC background subtraction** (`background.py`) | have | THE load-bearing piece for air; the kitome out-masses signal |
 | Evidence grading + NTC tier cap (`report.py`) | have | Turns hits into A/B/C/X with controlled confidence |
-| Breadth-of-coverage gate (`coverage.py`) | have (needs wiring) | Real genome-wide signal vs one-locus contamination artifact |
-| **Novelty flag** (NEW, `novelty.py`) | to build | Stay un-blind to a novel pathogen without the 100 GB arm |
+| Breadth-of-coverage gate (`coverage.py`) | **wired** (2026-06-23) | Real genome-wide signal vs one-locus contamination artifact |
+| **Novelty flag** (NEW, `novelty.py`) | **built** (`--novelty`) | Stay un-blind to a novel pathogen without the 100 GB arm |
+
+> **Wedge status (2026-06-23):** all core pieces present. Breadth gate wired
+> (grade→X when observed/expected breadth ratio < 0.25; validated on Zymo-spike
+> PAFs, real organisms 0.79–0.96). VFDB virulence unblocked — `abricate` installed
+> in an isolated env + wrapper on PATH. Novelty trigger built. The 100 GB GTDB arm
+> remains **deliberately uninstalled** (Tier-2, triggered).
 
 Everything else (assembly, GTDB taxonomy, diversity/ordination, HUMAnN) is
 **environmental-survey tooling** — a separate optional module, not the core.
