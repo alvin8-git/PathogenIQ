@@ -59,6 +59,30 @@ Brevibacterium parabrevis. (**bold** = clinically-relevant + plausibly in our
 tier-1 DB → the read-based concordance targets; the rest are commensal/
 environmental, recoverable only via the triggered assembly arm.)
 
+## What the "spike" is, and how the paper handled controls (from the PDF)
+
+- **Spike = wet-lab ZymoBIOMICS D6300, not in-silico.** Per Methods ("Spike-in
+  controls"): a 2 cm × 2 cm sterile face-mask section was inoculated with 100 µL
+  of the ZymoBIOMICS Microbial Community Standard (Zymo D6300) and run through the
+  same extraction + sequencing. So our Zymo-truth scoring of SpikeC1/SpikeC2 is
+  correct; the two differ in input DNA (1.2 vs 10 ng/µL) — a sensitivity check.
+  *(Distinct from the "synthetic spike-in DNA standard, 10⁹ copies/µL" added to
+  every sample — that is a qPCR normalization/recovery spike, not the mock.)*
+- **The paper did NOT subtract NTC/control species.** Its only "contaminant
+  removal" is read-level: Trimmomatic + KneadData (human + **PhiX**) + over-
+  represented-sequence removal. The **NTC is a qPCR-only** monitoring control.
+  The control/unworn masks are sequenced and reported as their *own category*
+  (Fig 3), never used to subtract taxa from samples. The paper instead argues
+  biologically (e.g. *Sphingomonas hankookensis* is "valid biological signal
+  rather than contamination ... a bona fide component").
+- **Our "air NTC" is built from those control masks — which are environmental
+  exposure controls, not no-template blanks.** The 6 pooled controls (C1–3
+  unworn-mask environmental + CE enrichment) legitimately carry airborne + skin/
+  handling microbiota, so using them as a kitome background subtracts *real air
+  signal*, not just reagent noise. That is the root reason the air NTC erased
+  Zymo *E. coli*/*P. aeruginosa*. The flag-not-subtract fix (2026-06-23) mitigates
+  it for dual-use pathogens; the cleaner fix is a true reagent/no-template NTC.
+
 ## Method
 
 1. Build an **air-specific NTC background** from the 6 `air-aircraft-ntc` controls
