@@ -216,3 +216,31 @@ def is_background(
     """True if the taxon is indistinguishable from background (tail p >= alpha)
     and should be zeroed out before grading."""
     return background_pvalue(taxon_id, sample_count, sample_total, model) >= alpha
+
+
+# Dual-use taxa: serious clinical pathogens that are ALSO common kitome /
+# environmental contaminants. A contaminated NTC can carry one at pathogen-level
+# abundance and erase a genuine infection — validated 2026-06-23 (the air NTC,
+# built from contaminated control runs, subtracted Zymo E. coli and P. aeruginosa
+# entirely; docs/air-concordance-validation-2026-06-22.md). For these the
+# background FLAGS (contaminant_risk -> demoted grade) instead of dropping, so a
+# treatable pathogen is never silently erased on the strength of suspect controls.
+# Pure contaminants (S. epidermidis, C. acnes, ...) are NOT here — they are still
+# subtracted normally.
+DUAL_USE_PATHOGENS = (
+    "escherichia coli",
+    "shigella",                 # E. coli <-> Shigella are near-identical genomically
+    "pseudomonas aeruginosa",
+    "klebsiella pneumoniae",
+    "enterobacter",
+    "acinetobacter baumannii",
+    "staphylococcus aureus",
+    "salmonella",
+)
+
+
+def is_dual_use(organism: str) -> bool:
+    """True if ``organism`` is a dual-use pathogen (clinical target + common
+    contaminant) that the background should flag rather than subtract."""
+    o = organism.lower()
+    return any(k in o for k in DUAL_USE_PATHOGENS)

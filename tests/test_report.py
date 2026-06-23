@@ -273,6 +273,27 @@ def test_build_entries_sets_tier_and_filters_background(tmp_path):
     assert all(e.tier == 2 for e in entries)
 
 
+def test_build_entries_flags_dual_use_pathogen_not_subtract(tmp_path):
+    # a contaminated NTC must NOT erase a real treatable pathogen: a dual-use
+    # taxon (E. coli) that overlaps background is KEPT and flagged; a pure
+    # contaminant at the same level is still dropped.
+    cfg = _cfg(tmp_path)
+    em = EMResult(abundances=np.array([0.5, 0.5]), n_reads=1_000_000, n_organisms=2, iterations=5)
+    names = ["Escherichia coli", "Cutibacterium acnes"]
+    lower = np.array([0.45, 0.45])
+    upper = np.array([0.55, 0.55])
+    taxon_ids = ["GCF_ecoli", "GCF_cacnes"]
+    # both sit at the sample's level in the NTC -> is_background True for both
+    bg = build_background(
+        [({"GCF_ecoli": 500_000, "GCF_cacnes": 500_000}, 1_000_000)], tier=2
+    )
+    entries = build_entries(cfg, names, em, lower, upper, taxon_ids, background=bg)
+    orgs = {e.organism: e for e in entries}
+    assert "Escherichia coli" in orgs            # dual-use: kept, not erased
+    assert orgs["Escherichia coli"].contaminant_risk is True   # but flagged
+    assert "Cutibacterium acnes" not in orgs     # pure contaminant: subtracted
+
+
 def test_report_includes_taxon_id(tmp_path):
     cfg = _cfg(tmp_path)
     em = _em_result()

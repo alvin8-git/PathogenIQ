@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .background import BackgroundModel, is_background
+from .background import BackgroundModel, is_background, is_dual_use
 from .config import PipelineConfig, SpecimenType
 from .contaminants import flag_contaminants
 from .crossmap import deduplicate_closely_related
@@ -162,10 +162,19 @@ def build_entries(
     if tier != 1:
         entries = flag_contaminants(entries)
     if background is not None:
-        entries = [
-            e for e in entries
-            if not is_background(e.taxon_id, e.read_count, em_result.n_reads, background)
-        ]
+        kept = []
+        for e in entries:
+            if is_background(e.taxon_id, e.read_count, em_result.n_reads, background):
+                # Dual-use pathogen + background overlap: flag, don't erase. A
+                # contaminated NTC must not be allowed to subtract away a real
+                # treatable pathogen (validated on the air NTC, 2026-06-23).
+                if is_dual_use(e.organism):
+                    e.contaminant_risk = True
+                    kept.append(e)
+                # else: pure contaminant -> subtract (drop) as before
+            else:
+                kept.append(e)
+        entries = kept
     entries.sort(key=lambda e: e.abundance, reverse=True)
     return entries
 
