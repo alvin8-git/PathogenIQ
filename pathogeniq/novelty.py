@@ -43,6 +43,7 @@ class NoveltyResult:
     n_species: int                              # distinct species-rank taxa seen
     top_taxa: list[tuple[str, int]] = field(default_factory=list)  # (species, reads)
     flagged: bool = False                       # unclassified_fraction >= threshold
+    flag_threshold: float = _DEFAULT_FLAG_THRESHOLD  # the bar `flagged` was tested against
 
 
 def parse_kraken_report(text: str, *, flag_threshold: float = _DEFAULT_FLAG_THRESHOLD) -> NoveltyResult:
@@ -87,6 +88,7 @@ def parse_kraken_report(text: str, *, flag_threshold: float = _DEFAULT_FLAG_THRE
         n_species=len(species),
         top_taxa=species[:5],
         flagged=fraction >= flag_threshold,
+        flag_threshold=flag_threshold,
     )
 
 

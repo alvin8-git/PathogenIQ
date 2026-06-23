@@ -407,6 +407,7 @@ def write_report(
             "n_species": novelty.n_species,
             "top_taxa": [{"species": s, "reads": n} for s, n in novelty.top_taxa],
             "flagged": novelty.flagged,
+            "flag_threshold": novelty.flag_threshold,
         }
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=2)
