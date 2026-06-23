@@ -22,10 +22,12 @@ Recent arc = airborne-pathogen detection + open-world (novel) capability.
   (clumped reads → Grade X; validated on Zymo-spike PAFs). GTDB 100 GB arm left
   uninstalled per the wedge design.
 
+**Open-world roadmap R1–R5 all built** (novelty, viral, MAG recovery, pathogenicity
+triage, grading). See `docs/air-open-world-detection-2026-06-23.md`.
+
 **Next (priority order):**
-1. **R5 open-world grading** — unify reference-free hits (MAGs/viral/novel) into one
-   evidence tier (breadth, completeness, marker count, phylo-confidence).
-2. **Validate R1 novelty** — needs the Kraken2 Standard DB (~50 GB) installed.
+1. **Validate R1 novelty** — the broad Kraken2 DB (`databases/kraken2`, 14 GB) is
+   present; calibrate the unclassified-fraction threshold on the air NTCs.
 3. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
    *Sphingomonas* / *Methylobacterium*, and exercise R4 triage on real MAGs.
 4. Viral-contig pathogenicity triage (ARG-carrying phage); R4 currently bacterial MAGs only.

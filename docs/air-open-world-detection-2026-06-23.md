@@ -11,7 +11,7 @@ and air is disproportionately **viral**. This is the requirements map and status
 | R2 | **Viral arm** (`viral.py`) — geNomad (ID + ICTV taxonomy) → CheckV (completeness) on contigs | Air pathogens are viral-heavy; bacterial/MAG arms can't see them | **built** (`--viral`) |
 | R3 | **Novel-bacterial recovery** — assemble → MetaBAT2 → GTDB-Tk placement | Reference-free recovery of unknown bacteria | built (`--assemble`) |
 | R4 | **Pathogenicity triage** (`pathogenicity.py`) — MAG VFDB/CARD markers + GTDB phylo-proximity-to-pathogen | Discriminator: novel *pathogen* vs novel benign environmental microbe | **built** (in `--assemble`) |
-| R5 | **Open-world grading** — evidence tier for reference-free hits (breadth, completeness, hallmark/marker count, phylo-confidence) | Consistent A/B/C/X-equivalent for assembled/novel/viral hits | **next** |
+| R5 | **Open-world grading** (`report.py::grade_open_world`) — A/B/C/X for MAGs/viral from completeness + contamination + hallmark/marker signal | Consistent grade scale for assembled/viral hits | **built** (capped at B) |
 
 ## Design notes (R1, R2 — built 2026-06-23)
 
@@ -98,9 +98,29 @@ distance (GTDB-Tk gives the lineage; ANI-to-closest-pathogen would be tighter).
 Viral-contig pathogenicity (ARG-carrying phage — the paper cites these) is not yet
 triaged; R4 currently covers bacterial MAGs only.
 
-## Next: R5 open-world grading
+## R5 open-world grading — built 2026-06-23
 
-Unify how reference-free hits (MAGs, viral contigs, novel) are scored into a
-single evidence tier — breadth/depth of coverage, CheckM/CheckV completeness,
-marker count, phylo-confidence — so every open-world arm reports a consistent
-A/B/C/X-equivalent alongside the targeted findings.
+`report.py::grade_open_world` puts every reference-free hit on the same A/B/C/X
+scale as targeted findings, from genome-quality evidence instead of read-count/NTC:
+
+- **completeness** (CheckM bacterial / CheckV viral) is the spine
+- **contamination** > 10% → X (chimeric bin)
+- **supporting_signal** (viral hallmark genes / pathogenicity markers) rescues a hit
+  with no completeness QC → C (real-but-unverified)
+- `grade_mag` / `grade_viral` adapters; `grade` emitted in the JSON mags + viral blocks
+
+**Capped at B by design:** Grade A means NTC-controlled detection (a same-run
+control), which an assembled genome lacks — the same invariant `grade()` enforces
+for targeted hits. Thresholds mirror the paper's MAG retention (≥50% completeness,
+≤10% contamination) and high-quality (≥90%/≤5%) bands.
+
+ponytail ceilings: contig coverage breadth/depth not yet folded in (completeness is
+the stronger genome-coherence signal for v1); thresholds are provisional, calibrate
+on labeled data alongside the targeted read floors.
+
+## Status: R1–R5 all built
+
+The open-world roadmap is complete (R1 novelty, R2 viral, R3 MAG recovery, R4
+pathogenicity triage, R5 grading). Remaining is **calibration** (breadth-ratio
+cutoff, open-world completeness bands, air read floors on labeled data) and the
+opt-in Tier-2 install (GTDB-Tk DB) that lights up R3/R4/R5 on real bacterial MAGs.
