@@ -90,16 +90,27 @@ def parse_kraken_report(text: str, *, flag_threshold: float = _DEFAULT_FLAG_THRE
     )
 
 
+def _resolve_kraken_db(path: Path) -> Path | None:
+    """A valid Kraken2 DB is a directory containing ``taxo.k2d`` (+ hash/opts).
+    Kraken DBs ship as tarballs that extract into a named subdir, so if ``path``
+    itself isn't the DB, descend one level to find the subdir that is."""
+    if not path.exists():
+        return None
+    if (path / "taxo.k2d").exists():
+        return path
+    for sub in sorted(p for p in path.iterdir() if p.is_dir()):
+        if (sub / "taxo.k2d").exists():
+            return sub
+    return None
+
+
 def kraken2_db_path() -> Path | None:
     """Resolve the broad Kraken2 DB: ``$KRAKEN2_DB`` if set, else the conventional
-    ``databases/kraken2`` (the Standard build, NOT ``kraken2_tier1``). None if
-    neither exists."""
+    ``databases/kraken2`` (the Standard build, NOT ``kraken2_tier1``). Descends into
+    a single extracted subdir if needed. None if no valid DB (with ``taxo.k2d``) is
+    found."""
     env = os.environ.get("KRAKEN2_DB")
-    if env:
-        p = Path(env)
-        return p if p.exists() else None
-    default = Path("databases/kraken2")
-    return default if default.exists() else None
+    return _resolve_kraken_db(Path(env) if env else Path("databases/kraken2"))
 
 
 def run_kraken2(reads: Path, db: Path, threads: int, out_dir: Path) -> Path | None:

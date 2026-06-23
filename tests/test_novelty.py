@@ -38,6 +38,24 @@ def test_no_root_row_falls_back_to_sum():
     assert abs(r.unclassified_fraction - 0.5) < 1e-9
 
 
+def test_resolve_kraken_db_descends_into_subdir(tmp_path):
+    from pathogeniq.novelty import _resolve_kraken_db
+    # DB directly in the dir
+    (tmp_path / "taxo.k2d").write_bytes(b"x")
+    assert _resolve_kraken_db(tmp_path) == tmp_path
+    # DB one level down (the tarball-extracted layout that silently skipped novelty)
+    nested = tmp_path / "nested"
+    sub = nested / "k2_standard_08gb"
+    sub.mkdir(parents=True)
+    (sub / "taxo.k2d").write_bytes(b"x")
+    assert _resolve_kraken_db(nested) == sub
+    # no DB anywhere
+    assert _resolve_kraken_db(tmp_path / "missing") is None
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert _resolve_kraken_db(empty) is None
+
+
 def test_empty_report_no_crash():
     r = parse_kraken_report("")
     assert r.total_reads == 0
