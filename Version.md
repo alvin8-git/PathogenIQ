@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] — 2026-06-24 — AMR/VFDB Organism Attribution
+
+### Fixed
+- **Contig-based AMR/VFDB hits now attribute to findings.** With contig screening the ABRicate `SEQUENCE` is the assembly contig id (`k141_42`), which carries no organism name, so the old substring match always returned `unknown` and every finding showed empty `amr_genes`/`virulence_factors`. `map_contigs_to_organisms()` (`amr.py`) now aligns the contigs back to the screened genomes (minimap2) and attributes each hit to the organism(s) its contig maps to.
+- **Novelty `flag_threshold` surfaced** in the report (`novelty.py`, `report.py`) — `flagged: false` is now interpretable against the bar it was tested against (the flag logic was already correct: 0.42 unclassified < 0.50).
+
+### Added
+- **Co-attribution across near-identical siblings** — a co-assembly collapses *E. coli* / *Shigella* into one shared contig set, so a contig is attributed to **every** genome within `_COMAP_MARGIN` (0.70) of its best aligned-bp, not just the single best. A shared core gene co-attributes to each sibling; an organism-specific region stays single. `AMRHit`/`VirulenceHit` gain `organism_matches` (best-first); the report groups by it.
+- Tests: contig→organism mapping, co-mapping of near-ties vs specific-stays-single, the no-map "unknown" regression, and non-blocking fallback (`test_amr.py`).
+
+### Validated
+- **Air demo (3 Enterobacteriaceae):** *Shigella sonnei* 1→34 AMR / 0→16 VFDB, *Shigella flexneri* 0→30 / 0→12 — both 100% shared with *E. coli*'s core set (correct); *Pseudomonas* keeps its distinct `MexA`/`ParR` (0 shared across the family boundary); *E. coli*-specific `marA`/`emrE`/`kdpE`/`ugd` did not leak to *Shigella*.
+
+---
+
 ## [0.4.0] — 2026-06-23 — Air Surveillance & Open-World Detection
 
 This release extends PathogenIQ from clinical fluids to **air / bioaerosol surveillance** and adds an **open-world** arm that detects pathogens not in the reference database — including viruses and novel organisms. Design and validation: `docs/air-open-world-detection-2026-06-23.md`, `docs/air-pathogen-wedge-design-2026-06-22.md`, `docs/air-concordance-validation-2026-06-22.md`.

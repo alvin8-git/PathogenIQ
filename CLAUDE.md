@@ -50,7 +50,7 @@ The open-world arms (`--assemble`/`--viral`) run via `_discovery_arms()` in `cli
 - `BackgroundModel` (`background.py`) — per-taxon RPM rates + tier; `is_background()` (NB upper tail) zeroes out kitome, EXCEPT `is_dual_use()` taxa which are flagged not subtracted
 - `ReportEntry` (`report.py`) — one row per targeted organism; lazy `grade` property reads `breadth_ratio`, `contaminant_risk`, tier, crossmap
 - Open-world results: `MAG` (`assembly.py`), `ViralContig` (`viral.py`), `PathogenicityAssessment` (`pathogenicity.py`), `NoveltyResult` (`novelty.py`) — each graded by `grade_open_world()` (capped at B) and emitted as its own JSON block
-- `AMRHit`/`VirulenceHit` (`amr.py`); `SpikeInfo` (`quantify.py`)
+- `AMRHit`/`VirulenceHit` (`amr.py`) — contig-based; `map_contigs_to_organisms()` aligns contigs back to the screened genomes so each hit attributes to a finding via `organism_matches` (co-attributed to every sibling within `_COMAP_MARGIN`=0.70 of best aligned-bp, so E. coli/Shigella shared genes show under each). `SpikeInfo` (`quantify.py`)
 - Renderers: `report.py` (JSON+TSV), `pdf_report.py`, `html_report.py` share the same `ReportEntry` rows
 
 **Evidence grading** (`report.py` + `contaminants.py` + `coverage.py` + `crossmap.py`):
