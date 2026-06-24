@@ -265,23 +265,28 @@ def write_report(
 
     entries = sorted(entries, key=lambda e: e.abundance, reverse=True)
 
+    # A contig shared by near-identical siblings (E. coli / Shigella) attributes its
+    # hit to each co-mapped organism, so the gene shows under every finding whose
+    # genome carries that region — not just the single best.
     amr_by_org: dict[str, list[dict]] = {}
     for hit in (amr_hits or []):
-        amr_by_org.setdefault(hit.organism_match, []).append({
-            "gene": hit.gene,
-            "drug_class": hit.drug_class,
-            "identity_pct": hit.identity_pct,
-            "coverage_pct": hit.coverage_pct,
-        })
+        for org in (hit.organism_matches or [hit.organism_match]):
+            amr_by_org.setdefault(org, []).append({
+                "gene": hit.gene,
+                "drug_class": hit.drug_class,
+                "identity_pct": hit.identity_pct,
+                "coverage_pct": hit.coverage_pct,
+            })
 
     vir_by_org: dict[str, list[dict]] = {}
     for hit in (virulence_hits or []):
-        vir_by_org.setdefault(hit.organism_match, []).append({
-            "gene": hit.gene,
-            "factor": hit.factor,
-            "identity_pct": hit.identity_pct,
-            "coverage_pct": hit.coverage_pct,
-        })
+        for org in (hit.organism_matches or [hit.organism_match]):
+            vir_by_org.setdefault(org, []).append({
+                "gene": hit.gene,
+                "factor": hit.factor,
+                "identity_pct": hit.identity_pct,
+                "coverage_pct": hit.coverage_pct,
+            })
 
     tsv_path = out / "pathogeniq_report.tsv"
     with open(tsv_path, "w", newline="") as f:

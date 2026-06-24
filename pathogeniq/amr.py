@@ -4,10 +4,18 @@ import csv
 import io
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import PipelineConfig
+
+
+# A contig is attributed to every reference whose aligned-bp is within this
+# fraction of its best match. Sibling species that share a gene's region (E. coli
+# / Shigella) co-attribute it; a contig carrying organism-specific sequence aligns
+# more fully to one genome and stays single. ponytail: 0.95 margin on aligned bp —
+# loosen if real shared genes are being dropped from a sibling.
+_COMAP_MARGIN = 0.95
 
 
 @dataclass
@@ -16,8 +24,9 @@ class AMRHit:
     drug_class: str
     identity_pct: float
     coverage_pct: float
-    organism_match: str  # matched organism name or "unknown"
+    organism_match: str  # single best-matching organism or "unknown"
     database: str
+    organism_matches: list[str] = field(default_factory=list)  # all co-mapped orgs
 
 
 @dataclass
@@ -26,52 +35,60 @@ class VirulenceHit:
     factor: str  # VFDB PRODUCT — the virulence factor description
     identity_pct: float
     coverage_pct: float
-    organism_match: str  # matched organism name or "unknown"
+    organism_match: str  # single best-matching organism or "unknown"
     database: str
+    organism_matches: list[str] = field(default_factory=list)  # all co-mapped orgs
 
 
-def _match_organism(
+def _attribute(
     sequence: str,
     organism_names: list[str],
-    contig_to_org: dict[str, str] | None = None,
-) -> str:
-    """Resolve an ABRicate SEQUENCE header to a known organism.
+    contig_to_org: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Resolve an ABRicate SEQUENCE header to the organism(s) it belongs to,
+    best-first.
 
     With contig-based input the header is an assembly contig id (e.g. ``k141_42``)
-    that carries no organism name, so substring matching always fails. When a
-    ``contig_to_org`` map (built by aligning contigs to the targeted genomes) is
-    supplied, look the contig up there first. Fall back to underscore-normalised
-    substring matching (covers the legacy read-based path and tests). 'unknown'
-    if nothing matches."""
+    that carries no organism name, so substring matching fails. When a
+    ``contig_to_org`` map (contig -> co-mapped organisms, built by aligning contigs
+    to the targeted genomes) is supplied, use it. Fall back to underscore-normalised
+    substring matching (legacy read-based path and tests). ``["unknown"]`` if
+    nothing matches."""
     if contig_to_org:
-        org = contig_to_org.get(sequence)
-        if org:
-            return org
+        orgs = contig_to_org.get(sequence)
+        if orgs:
+            return orgs
     seq_norm = sequence.replace("_", " ").lower()
     for org in organism_names:
         if org.lower() in seq_norm or org.replace(" ", "_").lower() in seq_norm:
-            return org
-    return "unknown"
+            return [org]
+    return ["unknown"]
 
 
-def map_contigs_to_organisms(cfg: PipelineConfig, contigs: Path | None, hits) -> dict[str, str]:
-    """Map each assembled contig to the targeted organism whose reference genome
-    it best aligns to (most aligned bases via minimap2). This is what lets a
-    contig-based AMR/VFDB hit be attributed to a finding — abricate only knows the
-    contig id, not which organism it came from.
+def map_contigs_to_organisms(
+    cfg: PipelineConfig, contigs: Path | None, hits,
+) -> dict[str, list[str]]:
+    """Map each assembled contig to the targeted organism(s) it aligns to, so a
+    contig-based AMR/VFDB hit can be attributed to a finding (abricate only knows
+    the contig id, not the organism).
+
+    For near-identical siblings (E. coli / Shigella) the co-assembly collapses
+    into one shared contig set, so forcing a single winner buried every Shigella
+    gene under E. coli. Instead each contig is attributed to **all** references
+    whose total aligned bases are within ``_COMAP_MARGIN`` of its best match:
+    a gene's region present in several siblings co-attributes to each, while an
+    organism-specific region (more aligned bases to one genome) stays single.
+    Returned lists are best-first. Non-blocking: ``{}`` if minimap2 or contigs are
+    missing.
 
     ``hits`` are the sketch hits (``.name`` + ``.genome_path``), so this aligns the
-    contigs against just the handful of screened genomes, not the whole DB. Contigs
-    with no alignment are simply absent (-> 'unknown'). Non-blocking: returns ``{}``
-    if minimap2 or the contigs are missing.
-
-    ponytail: best-single-organism by aligned bp — a chimeric contig is assigned
-    whole to its dominant source. Per-region binning only if mixed contigs matter."""
+    contigs against just the handful of screened genomes, not the whole DB."""
     if contigs is None or not shutil.which("minimap2"):
         return {}
     out = cfg.output_dir / "amr"
     out.mkdir(parents=True, exist_ok=True)
-    best: dict[str, tuple[int, str]] = {}   # contig -> (aligned_bp, organism)
+    # contig -> {organism: total aligned bp}
+    aligned: dict[str, dict[str, int]] = {}
     for idx, hit in enumerate(hits):
         genome = getattr(hit, "genome_path", None)
         if genome is None or not Path(genome).exists():
@@ -96,15 +113,24 @@ def map_contigs_to_organisms(cfg: PipelineConfig, contigs: Path | None, hits) ->
                 matches = int(cols[9])   # PAF col 10: residue matches
             except ValueError:
                 continue
-            if matches > best.get(contig, (0, ""))[0]:
-                best[contig] = (matches, hit.name)
-    return {contig: org for contig, (_, org) in best.items()}
+            per_org = aligned.setdefault(contig, {})
+            per_org[hit.name] = per_org.get(hit.name, 0) + matches
+    mapping: dict[str, list[str]] = {}
+    for contig, per_org in aligned.items():
+        best = max(per_org.values())
+        if best <= 0:
+            continue
+        cutoff = best * _COMAP_MARGIN
+        orgs = sorted((o for o, bp in per_org.items() if bp >= cutoff),
+                      key=lambda o: per_org[o], reverse=True)
+        mapping[contig] = orgs
+    return mapping
 
 
 def _parse_abricate_tsv(
     tsv_text: str,
     organism_names: list[str],
-    contig_to_org: dict[str, str] | None = None,
+    contig_to_org: dict[str, list[str]] | None = None,
 ) -> list[AMRHit]:
     """Parse ABRicate TSV output into AMRHit objects."""
     hits: list[AMRHit] = []
@@ -112,15 +138,16 @@ def _parse_abricate_tsv(
     for row in reader:
         if row.get("#FILE", "").startswith("#"):
             continue
+        orgs = _attribute(row.get("SEQUENCE", ""), organism_names, contig_to_org)
         hits.append(
             AMRHit(
                 gene=row.get("GENE", ""),
                 drug_class=row.get("RESISTANCE", ""),
                 identity_pct=float(row.get("%IDENTITY", 0)),
                 coverage_pct=float(row.get("%COVERAGE", 0)),
-                organism_match=_match_organism(
-                    row.get("SEQUENCE", ""), organism_names, contig_to_org),
+                organism_match=orgs[0],
                 database=row.get("DATABASE", ""),
+                organism_matches=orgs,
             )
         )
     return hits
@@ -156,7 +183,7 @@ def run_amr_screen(
     db: str = "card",
     min_identity: float = 90.0,
     min_coverage: float = 80.0,
-    contig_to_org: dict[str, str] | None = None,
+    contig_to_org: dict[str, list[str]] | None = None,
 ) -> list[AMRHit]:
     """Run ABRicate (default CARD) for resistance genes on assembled ``contigs``.
     Empty list if there are no contigs or ABRicate is absent (non-blocking)."""
@@ -171,7 +198,7 @@ def run_virulence_screen(
     db: str = "vfdb",
     min_identity: float = 90.0,
     min_coverage: float = 80.0,
-    contig_to_org: dict[str, str] | None = None,
+    contig_to_org: dict[str, list[str]] | None = None,
 ) -> list[VirulenceHit]:
     """Run ABRicate against VFDB (virulence factor database) on assembled ``contigs``,
     alongside the AMR screen. Same machinery as run_amr_screen, but keeps the PRODUCT
@@ -184,15 +211,16 @@ def run_virulence_screen(
     for row in reader:
         if row.get("#FILE", "").startswith("#"):
             continue
+        orgs = _attribute(row.get("SEQUENCE", ""), organism_names, contig_to_org)
         hits.append(
             VirulenceHit(
                 gene=row.get("GENE", ""),
                 factor=row.get("PRODUCT", "") or row.get("RESISTANCE", ""),
                 identity_pct=float(row.get("%IDENTITY", 0)),
                 coverage_pct=float(row.get("%COVERAGE", 0)),
-                organism_match=_match_organism(
-                    row.get("SEQUENCE", ""), organism_names, contig_to_org),
+                organism_match=orgs[0],
                 database=row.get("DATABASE", ""),
+                organism_matches=orgs,
             )
         )
     return hits
