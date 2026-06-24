@@ -13,9 +13,16 @@ from .config import PipelineConfig
 # A contig is attributed to every reference whose aligned-bp is within this
 # fraction of its best match. Sibling species that share a gene's region (E. coli
 # / Shigella) co-attribute it; a contig carrying organism-specific sequence aligns
-# more fully to one genome and stays single. ponytail: 0.95 margin on aligned bp —
-# loosen if real shared genes are being dropped from a sibling.
-_COMAP_MARGIN = 0.95
+# more fully to one genome and stays single.
+#
+# 0.70, not a tighter value: a reduced sibling genome (Shigella vs E. coli) covers
+# only ~80% of a shared contig even at high identity, so the genuine sibling band
+# sits at ~0.8 aligned-bp, not ~0.97. Empirically (air demo, 3 Enterobacteriaceae)
+# this margin makes the dominant multi-map mode exactly 3 genomes — the real
+# E.coli+2x Shigella core — with negligible (<0.1%) 4+/5-way over-attribution.
+# ponytail: single global margin; calibrate against a labeled sibling panel before
+# clinical use if separating sibling-species AMR matters.
+_COMAP_MARGIN = 0.70
 
 
 @dataclass
