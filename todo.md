@@ -26,8 +26,12 @@ Recent arc = airborne-pathogen detection + open-world (novel) capability.
 triage, grading). See `docs/air-open-world-detection-2026-06-23.md`.
 
 **Next (priority order):**
-1. **Validate R1 novelty** — the broad Kraken2 DB (`databases/kraken2`, 14 GB) is
-   present; calibrate the unclassified-fraction threshold on the air NTCs.
+1. ~~**Validate R1 novelty**~~ — DONE 2026-07-01 (docs/novelty-threshold-validation-2026-07-01.md).
+   Ran Kraken2 Standard on spike/filter/ntc air samples. 0.5 kept (sits just above
+   the air-NTC ceiling 0.472 → never false-triggers; also never fires on catalogued
+   filters, which is fine — those taxa are in-DB). Bare fraction AND the rank-
+   resolution refinement both fail to separate filters from NTCs; novelty on low-
+   biomass air belongs post-assembly (per-MAG, R3-R5), so this gate is advisory.
 3. **Re-run `--assemble`** on the aircraft filters (megahit bug was masking it) → recover
    *Sphingomonas* / *Methylobacterium*, and exercise R4 triage on real MAGs.
 4. Viral-contig pathogenicity triage (ARG-carrying phage); R4 currently bacterial MAGs only.

@@ -29,8 +29,18 @@ from .config import PipelineConfig
 
 # Fraction of reads with NO classification (against a broad DB) above which the
 # sample is flagged as harbouring novel/uncatalogued content worth assembling.
-# ponytail: crude single global threshold — refine with rank-resolution (reads
-# stuck above species level) if the bare unclassified fraction proves too blunt.
+# 0.5 validated on the PRJNA1228129 aircraft data (docs/novelty-threshold-
+# validation-2026-07-01.md): it sits just above the observed air-NTC ceiling
+# (0.472), so it never false-triggers on the kitome. Consequence — it also never
+# fires on the catalogued environmental filters (max 0.478); acceptable because
+# those taxa ARE in the DB (little read-level novelty to find). Do NOT lower it:
+# ~0.31 would catch filters but flag 4/6 NTCs.
+# ponytail: bare unclassified fraction is blunt AND the rank-resolution refinement
+# (genus-stuck reads) was tested and also fails — every candidate metric overlaps
+# filters with NTCs, and genus-stuck is highest for the all-known spike. Reliable
+# novelty on low-biomass air is a post-assembly per-MAG call (R3-R5), not this
+# read-fraction gate; treat this as advisory (--assemble runs regardless). If it
+# must gate, precede it with a biomass floor so kitome can't alias as novelty.
 _DEFAULT_FLAG_THRESHOLD = 0.5
 
 
