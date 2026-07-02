@@ -34,6 +34,11 @@ of it:**
 > PAFs, real organisms 0.79–0.96). VFDB virulence unblocked — `abricate` installed
 > in an isolated env + wrapper on PATH. Novelty trigger built. The 100 GB GTDB arm
 > remains **deliberately uninstalled** (Tier-2, triggered).
+>
+> **Update (2026-07-02):** the default is unchanged (Tier-2, off by the core), but
+> an installer for the triggered arm now exists — `scripts/15_setup_mag_env.sh`
+> provisions metabat2/CheckM + GTDB-Tk (r232) in isolated envs for when `--assemble`
+> is invoked.
 
 Everything else (assembly, GTDB taxonomy, diversity/ordination, HUMAnN) is
 **environmental-survey tooling** — a separate optional module, not the core.

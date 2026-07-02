@@ -64,7 +64,7 @@ The open-world arms (`--assemble`/`--viral`) run via `_discovery_arms()` in `cli
 - Long reads: Chopper for QC, minimap2 for host removal
 - Both paths produce identical intermediate files; downstream stages are read-type agnostic
 
-**External tool dependencies:** core (fastp, Chopper, BWA-MEM2, minimap2, samtools, sourmash) via `environment.yml`. Optional/open-world: kraken2 + broad DB (novelty), abricate (AMR/VFDB/R4 markers), megahit/metabat2/checkm/gtdbtk (MAG arm), genomad/checkv (viral arm). geNomad/CheckV/abricate need `numpy<2` and live in **isolated conda envs** symlinked/wrapped onto `PATH` (`scripts/13_setup_viral_env.sh`) — never install them into the core env (it breaks SciPy). Every external stage is **non-blocking**: a missing tool/DB skips that stage rather than failing the run.
+**External tool dependencies:** core (fastp, Chopper, BWA-MEM2, minimap2, samtools, sourmash) via `environment.yml`. Optional/open-world: kraken2 + broad DB (novelty), abricate (AMR/VFDB/R4 markers), megahit/metabat2/checkm/gtdbtk (MAG arm), genomad/checkv (viral arm). geNomad/CheckV/abricate need `numpy<2` and live in **isolated conda envs** symlinked/wrapped onto `PATH` (`scripts/13_setup_viral_env.sh`) — never install them into the core env (it breaks SciPy). The MAG toolchain (metabat2/checkm/gtdbtk) uses the same discipline via `scripts/15_setup_mag_env.sh` (isolated `mag-bin` + `gtdbtk` envs, DBs on a data volume); `scripts/16_run_air_assemble.sh` runs the `--assemble` arm on the aircraft filters. Every external stage is **non-blocking**: a missing tool/DB skips that stage rather than failing the run.
 
 ## Test structure
 

@@ -102,6 +102,12 @@ environmental, recoverable only via the triggered assembly arm.)
   installed. megahit + metabat2 alone would recover bins but without taxonomy the
   species concordance can't be done.
 
+**Update (2026-07-02):** the assembly arm is no longer blocked. `scripts/15_setup_mag_env.sh`
+installs metabat2 + CheckM and GTDB-Tk (release r232) in isolated conda envs with
+PATH wrappers into the core env; the CheckM and GTDB-Tk DBs are built on /data. The
+first `--assemble` run on the 5 aircraft filters (scripts/16) is underway — MAG
+taxonomy/concordance results are not yet finalized.
+
 ## Results — read-based, `--specimen air` (scored 2026-06-23)
 
 Run: `air_all.sh` (headless, setsid). 5 filters + 2 Zymo spike-ins, air NTC

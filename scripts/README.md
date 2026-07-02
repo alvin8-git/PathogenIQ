@@ -65,7 +65,7 @@ Downloads exactly the 10 reference genomes in the ZymoBIOMICS D6300 standard:
 
 ### `02_download_tier1_db.py` — Full Tier-1 Pathogen DB
 
-Downloads ~60+ reference genomes covering:
+Downloads ~110 reference genomes covering:
 - WHO Priority Pathogens (A/B/C tiers)
 - CDC Select Agents
 - Common clinical viruses (HSV, CMV, EBV, SARS-CoV-2, influenza)
@@ -122,7 +122,7 @@ Report will be at `results/zymo_rep1/report/pathogeniq_report.json`.
 
 ---
 
-## Validation, Benchmark & Open-World Scripts (04–13)
+## Validation, Benchmark & Open-World Scripts (04–16)
 
 Scripts 01–03 build the databases the pipeline needs. The rest support validation,
 benchmarking, the NTC background, and the open-world / air-surveillance arm.
@@ -139,13 +139,19 @@ benchmarking, the NTC background, and the open-world / air-surveillance arm.
 | `11_pool_blank_background.py` | Classify + pool negative-control blanks into a Tier-2 background table |
 | `12_viral_insilico_spikein.py` | In-silico viral spike-in validation (wgsim → assembly → geNomad/CheckV → score); offline `--selfcheck` |
 | `13_setup_viral_env.sh` | Set up the viral arm: isolated `genomad` env (geNomad + CheckV), fetch DBs, symlink CLIs into the pathogeniq env |
+| `15_setup_mag_env.sh` | Set up the MAG arm: isolated `mag-bin` env (metabat2 + CheckM) and `gtdbtk` env, fetch the CheckM DB (~1.4 GB) + GTDB-Tk r232 DB (~94 GB) onto a data volume, wrap the CLIs onto the core `PATH`. Loud FATAL verification per stage |
+| `16_run_air_assemble.sh` | Run the `--assemble` MAG arm on the 5 PRJNA1228129 aircraft-filter samples (fail-fast toolchain check, one sample at a time) |
+
+(`build_background_default.py` is a helper that rebuilds the shipped Tier-2
+`pathogeniq/data/background_default.tsv` from a pooled blank classification.)
 
 **Open-world DBs (optional).** The novelty trigger needs a broad Kraken2 DB
-(`databases/kraken2`); the viral arm needs geNomad + CheckV DBs (`scripts/13`,
-~3 GB). The MAG arm's **GTDB-Tk DB (~110 GB)** is deliberately not part of the core
-install — it is a triggered Tier-2 extra. geNomad/CheckV/ABRicate are installed in
-their own conda envs (they require `numpy<2`) and exposed on `PATH`; never install
-them into the core `pathogeniq` env.
+(`databases/kraken2`, ~14 GB); the viral arm needs geNomad + CheckV DBs (`scripts/13`,
+~3 GB). The MAG arm's **GTDB-Tk DB (~94 GB, release r232)** plus the CheckM DB
+(~1.4 GB) are installed by `scripts/15` — deliberately not part of the core install,
+they are a triggered Tier-2 extra. geNomad/CheckV/ABRicate and metabat2/CheckM/GTDB-Tk
+are all installed in their own conda envs (they require `numpy<2`) and exposed on
+`PATH`; never install them into the core `pathogeniq` env.
 
 ---
 

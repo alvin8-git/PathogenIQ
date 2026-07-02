@@ -30,6 +30,23 @@ Existing tools fall into two categories, each with limitations:
 
 PathogenIQ bridges this gap: it runs entirely locally, completes in under one hour, and produces clinically interpretable reports with graded evidence and specimen-aware contamination suppression.
 
+### Comparison to related tools — PathogenIQ vs. Centrifuge
+
+A useful reference point is [Centrifuge](https://github.com/DaehwanKimLab/centrifuge), a fast taxonomic classifier. Centrifuge and PathogenIQ overlap at the read-classification layer but answer different questions: Centrifuge answers *"what is in this sample?"*, PathogenIQ answers *"which finding is a real, actionable pathogen — and did I miss anything un-catalogued?"*
+
+| Dimension | Centrifuge | PathogenIQ |
+|---|---|---|
+| Scope | Single classifier binary | Full pipeline: QC → host removal → screen → align → AMR/VFDB → grading → report |
+| Index | FM-index/BWT over compressed genomes | sourmash sketch + SBT → targeted minimap2 |
+| Abundance | EM over multi-mapped reads | EM + bootstrap 95% CI |
+| Output | Read classifications + abundance TSV | Graded findings (A/B/C/X) + JSON/TSV/PDF/HTML |
+| Confidence | Species score, no clinical grade | Breadth gate, NTC tier cap, cross-map dedup |
+| Contamination | None | NTC background subtraction + flag-not-subtract |
+| Open-world | No (DB-bound) | Novelty trigger + MAG recovery + viral arm |
+| DB footprint | Whole NCBI-nt in ~4 GB (its advantage) | Curated ~110-pathogen Tier-1 DB + broad Kraken2 for novelty only |
+
+Centrifuge's strength — fast, broad, low-memory classification against everything — is exactly the *novelty-screen* role inside PathogenIQ (§7.2), where PathogenIQ uses Kraken2. It is a substitute for one stage, not for the interpretation layer that turns a classification into a defensible call.
+
 ---
 
 ## 2. The Clinical Problem
@@ -214,11 +231,12 @@ AMR detection is intentionally **non-blocking**: if ABRicate (or MEGAHIT) is una
 The PDF report (`pathogeniq/pdf_report.py`) translates the computational output into a format accessible to clinicians and laboratory directors. It includes:
 
 - **Header**: sample identifier, specimen type, date/time
-- **Findings table**: organism name, abundance, confidence interval, read count, grade (colour-coded), contaminant flag
-- **AMR table**: resistance genes, drug classes, identity/coverage, organism match
+- **Findings table**: organism name, abundance, confidence interval, read count, grade (colour-coded), contaminant flag, and — when a spike-in anchored absolute quantification (§5-adjacent `quantify.py`) — an absolute-copies column (shown only when populated, so unspiked runs are not cluttered with an empty column)
+- **AMR table** + **Virulence (VFDB) table**: genes, drug classes / virulence factors, identity/coverage, organism match
+- **MAG table** (when the `--assemble` arm recovered genomes): bin, GTDB lineage, completeness, contamination, contigs, size, and open-world grade (§7.6)
 - **Footer**: grade definitions and research-use disclaimer
 
-The colour coding follows clinical conventions: green for high confidence, orange for moderate, grey for low, red for insufficient. The report is designed for single-page printing and integration into electronic health record systems.
+The colour coding follows clinical conventions: green for high confidence, orange for moderate, grey for low, red for insufficient. The HTML report (`pathogeniq/html_report.py`) renders the same `ReportEntry` rows and the same MAG/abundance columns for screen viewing. The report is designed for single-page printing and integration into electronic health record systems.
 
 ---
 
@@ -401,6 +419,32 @@ both `--assemble` and `--viral` no-op on every run. This is the value of an
 end-to-end harness that asserts a positive result rather than trusting a non-blocking
 "0 found."
 
+### 6.8 Novelty-trigger calibration — real air data (2026-07-01)
+
+The R1 novelty trigger (§7.2) flags a sample when the Kraken2 unclassified fraction
+clears `_DEFAULT_FLAG_THRESHOLD`. That threshold was calibrated on the PRJNA1228129
+aircraft data (`docs/novelty-threshold-validation-2026-07-01.md`): a single uniform
+Kraken2 (Standard 8 GB) pass over 500k-read subsamples of the spike, filter, and NTC
+groups, recovering the deployed non-host metric as `U / (total − Homo sapiens)`.
+
+The finding is honest about the gate's limits. The bare unclassified fraction does
+**not** separate "assemble-worthy" air (filters, min 0.319) from low-biomass kitome
+(NTCs, max 0.472) — they overlap, and one NTC (0.472) out-scores four of five real
+filters. The rank-resolution refinement the code comment proposed (genus-stuck reads)
+fails the same way, and is actually a confounded *known-organism* signal (the all-in-DB
+Zymo spike scores highest). So:
+
+- **`_DEFAULT_FLAG_THRESHOLD` stays at 0.5.** It sits just above the observed air-NTC
+  ceiling (0.472), so it never false-triggers on the kitome. The cost — it also never
+  fires on the catalogued environmental filters (max 0.478) — is acceptable, because
+  those taxa (*Sphingomonas*, *Methylobacterium*) **are** in the DB, so there is little
+  read-level novelty to find (consistent with the 6/10 read-based concordance, §6.6).
+- **The gate is advisory, not gating.** Reliable air novelty is a post-assembly,
+  per-MAG judgement (completeness + GTDB placement, R3–R5), not a pre-assembly
+  read-fraction pre-filter. Since `--assemble` runs regardless of the trigger, advisory
+  is the correct role for it at this reliability. If it must ever gate, precede it with
+  a biomass floor so kitome cannot alias as novelty.
+
 ---
 
 ## 7. Open-World Detection & Air Surveillance (the air wedge)
@@ -460,6 +504,14 @@ into metagenome-assembled genomes (MAGs), CheckM scores completeness/contaminati
 (retain ≥50% / ≤10%, the paper's thresholds), and GTDB-Tk places each MAG in the
 bacterial tree even when no species reference exists. Every step is non-blocking and
 the arm is off by default (`--assemble`) because of the GTDB DB cost.
+
+The toolchain has a one-shot installer, `scripts/15_setup_mag_env.sh` (isolated
+`mag-bin` env for metabat2 + CheckM and a `gtdbtk` env, wrapped onto the core `PATH`
+like the viral tools), which fetches the CheckM DB (~1.4 GB) and GTDB-Tk r232 DB
+(~94 GB) onto a data volume. Recovered MAGs render in the JSON `mags` block and as a
+MAG table (bin, GTDB lineage, completeness, contamination, size, open-world grade) in
+the PDF and HTML reports. `scripts/16_run_air_assemble.sh` exercises the full arm on
+the PRJNA1228129 aircraft filters.
 
 ### 7.5 Pathogenicity triage — pathogen vs environmental (`pathogenicity.py`)
 
@@ -589,6 +641,6 @@ The ultimate goal is integration into clinical microbiology laboratory workflows
 
 ---
 
-*Last updated: 2026-06-23*
+*Last updated: 2026-07-02*
 
-*Design changes reflected: Plan 4 NTC-aware tiered grading + NB background subtraction (`background.py`) with **flag-not-subtract** for dual-use pathogens (§5.6); cross-mapping dedup (`crossmap.py`); the **breadth-of-coverage gate** (§3 Stage 4.5, `coverage.py`); the **AIR specimen type** + air kitome priors; AMR + **VFDB virulence** and **spike-in absolute quantification** (`amr.py`, `quantify.py`); and the full **open-world / air-surveillance arm** (§7): novelty trigger (`novelty.py`), viral arm (`viral.py`), MAG recovery (`assembly.py`), pathogenicity triage (`pathogenicity.py`), and open-world grading (`report.py`). Validation added: air concordance + the air-NTC over-subtraction finding (§6.6) and the viral in-silico spike-in at 100% recall (§6.7). See also `docs/air-open-world-detection-2026-06-23.md`, `docs/air-pathogen-wedge-design-2026-06-22.md`, `docs/air-concordance-validation-2026-06-22.md`, `docs/benchmark-results-2026-06-21.md`, and `docs/dispersion-validation-2026-06-22.md`.*
+*Design changes reflected: Plan 4 NTC-aware tiered grading + NB background subtraction (`background.py`) with **flag-not-subtract** for dual-use pathogens (§5.6); cross-mapping dedup (`crossmap.py`); the **breadth-of-coverage gate** (§3 Stage 4.5, `coverage.py`); the **AIR specimen type** + air kitome priors; AMR + **VFDB virulence** (now screened over assembled **contigs**, co-attributed to sibling genomes within `_COMAP_MARGIN`=0.70) and **spike-in absolute quantification** (`amr.py`, `quantify.py`); and the full **open-world / air-surveillance arm** (§7): novelty trigger (`novelty.py`), viral arm (`viral.py`), MAG recovery (`assembly.py`), pathogenicity triage (`pathogenicity.py`), and open-world grading (`report.py`). Validation added: air concordance + the air-NTC over-subtraction finding (§6.6), the viral in-silico spike-in at 100% recall (§6.7), and the **R1 novelty-trigger calibration** keeping the 0.5 gate advisory (§6.8). Most recent (2026-07-02): the MAG toolchain installer (`scripts/15`) + first real-data `--assemble` run (`scripts/16`), and **MAG + absolute-copies rendering** in the PDF/HTML reports (§4). See also `docs/novelty-threshold-validation-2026-07-01.md`, `docs/air-open-world-detection-2026-06-23.md`, `docs/air-pathogen-wedge-design-2026-06-22.md`, `docs/air-concordance-validation-2026-06-22.md`, `docs/benchmark-results-2026-06-21.md`, and `docs/dispersion-validation-2026-06-22.md`.*

@@ -85,9 +85,10 @@ The **open-world arm tools** (geNomad, CheckV, ABRicate) require `numpy<2` and c
 
 ```bash
 bash scripts/13_setup_viral_env.sh     # geNomad + CheckV env + DBs (~3 GB), CLIs linked in
+bash scripts/15_setup_mag_env.sh       # MAG arm: metabat2 + CheckM + GTDB-Tk envs + DBs (CheckM ~1.4 GB, GTDB-Tk r232 ~94 GB)
 ```
 
-(ABRicate is set up the same way — its own env + a `PATH` wrapper — because it is a Perl/BLAST tool. See [`environment.yml`](environment.yml) for the exact commands.)
+(ABRicate is set up the same way — its own env + a `PATH` wrapper — because it is a Perl/BLAST tool. See [`environment.yml`](environment.yml) for the exact commands.) `scripts/15` follows the identical isolation discipline for the MAG toolchain and puts its large DBs on a data volume, not the root partition.
 
 ---
 
@@ -150,7 +151,7 @@ pathogeniq run \
 
 ### Report
 
-`results/<sample>/report/` holds `pathogeniq_report.{json,tsv,pdf,html}`. The JSON has a `findings` array (targeted hits with grade, `breadth_ratio`, NTC tier, AMR/virulence, absolute copies) plus optional `novelty`, `viral`, `mags`, and `pathogenicity` blocks — every hit, targeted or open-world, carries an A/B/C/X grade.
+`results/<sample>/report/` holds `pathogeniq_report.{json,tsv,pdf,html}`. The JSON has a `findings` array (targeted hits with grade, `breadth_ratio`, NTC tier, AMR/virulence, absolute copies) plus optional `novelty`, `viral`, `mags`, and `pathogenicity` blocks — every hit, targeted or open-world, carries an A/B/C/X grade. The PDF and HTML also render a MAG table (bin, GTDB lineage, completeness/contamination, grade) when the assembly arm recovered genomes, and an absolute-copies column when a spike-in anchored quantification.
 
 ---
 
@@ -165,6 +166,7 @@ PathogenIQ's design decisions are driven by real validation runs, not intuition.
 | Dispersion prior | spike-free kitome blanks, leave-one-out | FPR 30–65× α at **every** dispersion → coverage, not the prior, is the limit | Tier-2 → Grade B cap |
 | Air concordance | Jeilu et al. 2025 aircraft filters (PRJNA1228129) | Zymo spike recall 6/10; air NTC over-subtracted real E. coli/Pseudomonas | **flag-not-subtract** for dual-use pathogens |
 | Viral arm | in-silico spike (T4, Lambda, SARS-CoV-2 → real air background) | **100% recall (3/3)**, correct ICTV lineage | confirmed the viral arm end-to-end; caught a silent `run_megahit` bug |
+| Novelty trigger | PRJNA1228129 spike/filter/NTC, Kraken2 unclassified fraction | filters (≤0.478) and NTCs (≤0.472) overlap → gate can't separate them | keep **0.5 advisory** (never false-fires on kitome); novelty belongs post-assembly per-MAG |
 
 Run the mock-standard integration tests:
 
@@ -178,7 +180,7 @@ HUMAN_REF=... TIER1_DB=... pytest tests/integration/ -v -m integration
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v            # ~180 unit tests, no external tools needed (subprocess mocked)
+pytest tests/ -v            # ~195 unit tests, no external tools needed (subprocess mocked)
 ruff check pathogeniq/ tests/
 mypy pathogeniq/
 ```
@@ -207,9 +209,9 @@ mypy pathogeniq/
 
 ## Status & roadmap
 
-Implemented: targeted core, NTC tiered grading, cross-mapping dedup, breadth gate, AIR specimen + air kitome priors, AMR + VFDB virulence, spike-in absolute quantification, and the full open-world arc (novelty → viral → MAG → pathogenicity triage → open-world grading). The viral arm is validated end-to-end (100% in-silico recall); the bacterial-MAG path is code-complete and unit-tested but needs the GTDB-Tk DB installed to run on real data.
+Implemented: targeted core, NTC tiered grading, cross-mapping dedup, breadth gate, AIR specimen + air kitome priors, AMR + VFDB virulence (screened over contigs, co-attributed to sibling genomes), spike-in absolute quantification, and the full open-world arc (novelty → viral → MAG → pathogenicity triage → open-world grading). The viral arm is validated end-to-end (100% in-silico recall); the novelty trigger is calibrated (advisory 0.5). The bacterial-MAG toolchain (metabat2 + CheckM + GTDB-Tk) is now installed via `scripts/15` (CheckM + GTDB-Tk r232 DBs on disk), the first real-data `--assemble` run on the aircraft filters is underway (`scripts/16`), and recovered MAGs + absolute copies now render in the PDF/HTML reports.
 
-Next: calibrate provisional cutoffs (breadth ratio, open-world completeness bands, air read floors) on labeled data; prospective batch-matched-NTC studies for clinical Grade-A; optional GTDB arm install.
+Next: calibrate provisional cutoffs (breadth ratio, open-world completeness bands, air read floors) on labeled data; prospective batch-matched-NTC studies for clinical Grade-A; viral-contig pathogenicity triage (ARG-carrying phage); Nextflow orchestration.
 
 ---
 

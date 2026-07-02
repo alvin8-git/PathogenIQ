@@ -122,5 +122,10 @@ on labeled data alongside the targeted read floors.
 
 The open-world roadmap is complete (R1 novelty, R2 viral, R3 MAG recovery, R4
 pathogenicity triage, R5 grading). Remaining is **calibration** (breadth-ratio
-cutoff, open-world completeness bands, air read floors on labeled data) and the
-opt-in Tier-2 install (GTDB-Tk DB) that lights up R3/R4/R5 on real bacterial MAGs.
+cutoff, open-world completeness bands, air read floors on labeled data). The
+opt-in Tier-2 install (GTDB-Tk DB) that lights up R3/R4/R5 on real bacterial MAGs
+is now in place (see update below).
+
+**Update (2026-07-02):** MAG toolchain now installed (scripts/15); first --assemble
+run on the 5 aircraft filters is underway (scripts/16). Novelty trigger validated
+2026-07-01 (advisory, kept at 0.5).

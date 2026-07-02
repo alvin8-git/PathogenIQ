@@ -11,9 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nextflow orchestration (local Docker, SLURM, AWS Batch)
 - Batch-matched NTC (Tier 1) prospective evaluation for Grade-A claims
 - Calibrate provisional cutoffs on labeled air data (breadth ratio, open-world completeness bands, air read floors)
-- GTDB-Tk DB install to run the bacterial-MAG path (R3/R4/R5) on real data
 - Viral-contig pathogenicity triage (ARG-carrying phage)
 - Web dashboard for clinical users; FHIR-compatible report export
+
+---
+
+## [0.4.2] — 2026-07-02 — MAG Toolchain, Novelty Calibration & Report Rendering
+
+### Added
+- **MAG toolchain installer** `scripts/15_setup_mag_env.sh` — provisions metabat2 + CheckM (isolated `mag-bin` conda env) and GTDB-Tk (`gtdbtk` env) with thin `PATH` wrappers into the core env, same isolation discipline as the viral tools. Fetches the CheckM DB (~1.4 GB) and GTDB-Tk **r232** DB (~94 GB) onto a data volume (not the root partition), with loud FATAL verification on every stage.
+- **Air assembly runner** `scripts/16_run_air_assemble.sh` — runs the `--assemble` MAG arm on the 5 PRJNA1228129 aircraft-filter samples (fail-fast toolchain check, sequential so GTDB-Tk's pplacer has the box's RAM).
+- **MAG table + absolute-copies column in the PDF/HTML reports** (`pdf_report.py`, `html_report.py`) — the assembly arm's MAGs (bin, GTDB lineage, completeness, contamination, contigs, size, open-world grade) now render alongside the findings; an "Abs. copies" column appears only when a spike-in anchored quantification (so unspiked runs are not cluttered). Wired through `cli.py`; unit-tested.
+
+### Validated
+- **R1 novelty threshold** calibrated on real air data (`docs/novelty-threshold-validation-2026-07-01.md`). Kept `_DEFAULT_FLAG_THRESHOLD = 0.5`: it sits just above the air-NTC ceiling (0.472) so it never false-fires on kitome, but filters (≤0.478) and NTCs overlap, so the bare fraction (and its rank-resolution refinement) cannot separate assemble-worthy air from kitome. The gate is therefore **advisory** (–`--assemble` runs regardless); reliable air novelty is a post-assembly, per-MAG judgement.
+- **MAG toolchain installs clean** — metabat2/CheckM/GTDB-Tk wrappers resolve on the core `PATH`; GTDB-Tk r232 (94 GB) + CheckM (1.4 GB) DBs verified on disk.
+
+### Changed
+- **AMR + VFDB now screen assembled contigs, not raw reads** — ~100× fewer sequences to align and clean full-length gene calls (measured: abricate-on-reads was ~16 min/DB on a 6.5 M-read air sample). The same contig set is shared with the viral arm, so assembly is paid for once.
+- **EM bootstrap CIs parallelized across processes** — the resampling loop now fans out over cores.
 
 ---
 
@@ -226,6 +242,7 @@ The headline of this release is **Plan 4**: a statistically principled, provenan
 
 | Version | Python | Key Dependencies |
 |---------|--------|------------------|
+| 0.4.x | ≥3.11 | core: numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1, reportlab ≥4.0; external (core env): kraken2, minimap2, megahit; external (isolated `numpy<2` envs, `PATH`-wrapped): geNomad, CheckV, ABRicate, metabat2, CheckM, GTDB-Tk |
 | 0.3.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1, reportlab ≥4.0; external: kraken2, bracken (benchmarking only) |
 | 0.2.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1, reportlab ≥4.0 |
 | 0.1.0 | ≥3.11 | numpy ≥1.26, scipy ≥1.12, pysam ≥0.22, pandas ≥2.2, click ≥8.1 |
