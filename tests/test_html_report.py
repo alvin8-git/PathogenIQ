@@ -91,6 +91,31 @@ def test_html_report_no_amr_message(tmp_path):
     assert "No AMR genes detected" in content
 
 
+def test_html_report_with_mags(tmp_path):
+    from pathogeniq.assembly import MAG
+    cfg = _cfg(tmp_path)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    mags = [MAG("bin.1", tmp_path / "bin.1.fa", 92.0, 2.0,
+                "d__Bacteria;g__Sphingomonas", 45, 3_800_000)]
+    path = write_html_report(cfg, qc, hr, hits, entries, em, mags=mags)
+    content = path.read_text()
+    assert "Metagenome-Assembled Genomes" in content
+    assert "Sphingomonas" in content
+
+
+def test_html_report_absolute_copies_column(tmp_path):
+    cfg = _cfg(tmp_path)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    entries[0].absolute_copies = 1234.5
+    path = write_html_report(cfg, qc, hr, hits, entries, em)
+    content = path.read_text()
+    assert "Abs. copies" in content
+    # No column when no entry carries a spike-derived copy number.
+    _, _, _, plain, _ = _inputs(tmp_path)
+    plain_content = write_html_report(cfg, qc, hr, hits, plain, em).read_text()
+    assert "Abs. copies" not in plain_content
+
+
 def test_html_report_contaminant_flag(tmp_path):
     cfg = _cfg(tmp_path)
     qc = QCMetrics(total_reads=100_000, passing_reads=95_000)

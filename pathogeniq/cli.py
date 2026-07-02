@@ -216,12 +216,12 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                               novelty=novelty, viral=viral, pathogenicity=triage)
 
     if not no_pdf:
-        pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits)
+        pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits, mags=mags)
         click.echo(f"PDF report:        {pdf_path}")
 
     html_path = write_html_report(
         cfg, qc_metrics, hr_metrics, hits, entries, em_result,
-        amr_hits=amr_hits, virulence_hits=virulence_hits,
+        amr_hits=amr_hits, virulence_hits=virulence_hits, mags=mags,
     )
     click.echo(f"HTML report:       {html_path}")
 

@@ -56,3 +56,23 @@ def test_pdf_report_empty_entries(tmp_path):
     pdf_path = write_pdf_report(cfg, [], amr_hits=[])
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 1000
+
+
+def test_pdf_report_with_absolute_copies(tmp_path):
+    from pathogeniq.report import ReportEntry as RE
+    cfg = _cfg(tmp_path)
+    entries = [RE("Staphylococcus aureus", 0.8, 0.72, 0.88, 80,
+                  SpecimenType.BLOOD, absolute_copies=1234.5)]
+    pdf_path = write_pdf_report(cfg, entries, amr_hits=[])
+    assert pdf_path.exists()
+    assert pdf_path.stat().st_size > 1000
+
+
+def test_pdf_report_with_mags(tmp_path):
+    from pathogeniq.assembly import MAG
+    cfg = _cfg(tmp_path)
+    mags = [MAG("bin.1", tmp_path / "bin.1.fa", 92.0, 2.0,
+                "d__Bacteria;g__Sphingomonas", 45, 3_800_000)]
+    pdf_path = write_pdf_report(cfg, _entries(), amr_hits=[], mags=mags)
+    assert pdf_path.exists()
+    assert pdf_path.stat().st_size > 1000

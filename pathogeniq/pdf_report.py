@@ -17,7 +17,7 @@ from reportlab.platypus import (
 
 from .amr import AMRHit
 from .config import PipelineConfig
-from .report import EvidenceGrade, ReportEntry
+from .report import EvidenceGrade, ReportEntry, grade_mag
 
 
 _GRADE_COLORS: dict[EvidenceGrade, str] = {
@@ -33,6 +33,7 @@ def write_pdf_report(
     entries: list[ReportEntry],
     amr_hits: list[AMRHit],
     virulence_hits: list | None = None,
+    mags: list | None = None,
 ) -> Path:
     """Render a single-page clinical PDF report."""
     out = cfg.output_dir / "report"
@@ -86,18 +87,30 @@ def write_pdf_report(
     # Findings table
     story.append(Paragraph("Findings", heading2_style))
     if entries:
-        findings_data = [["Organism", "Abundance (%)", "CI Lower", "CI Upper", "Reads", "Grade", "Contaminant"]]
+        # Absolute-copies column only when a spike-in anchored quantification (Plan 6 #2);
+        # otherwise every row is empty, so drop it.
+        show_copies = any(e.absolute_copies is not None for e in entries)
+        header = ["Organism", "Abundance (%)", "CI Lower", "CI Upper", "Reads"]
+        if show_copies:
+            header.append("Abs. copies")
+        header += ["Grade", "Contaminant"]
+        findings_data = [header]
         for e in entries:
             grade_color = _GRADE_COLORS.get(e.grade, colors.black)
-            findings_data.append([
+            row = [
                 e.organism,
                 f"{e.abundance * 100:.2f}",
                 f"{e.ci_lower * 100:.2f}",
                 f"{e.ci_upper * 100:.2f}",
                 str(e.read_count),
+            ]
+            if show_copies:
+                row.append("—" if e.absolute_copies is None else f"{e.absolute_copies:.3g}")
+            row += [
                 Paragraph(f'<font color="{grade_color}"><b>{e.grade.value}</b></font>', styles["Normal"]),
                 "Yes" if e.contaminant_risk else "No",
-            ])
+            ]
+            findings_data.append(row)
         findings_table = Table(findings_data, repeatRows=1)
         findings_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
@@ -170,6 +183,40 @@ def write_pdf_report(
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ]))
         story.append(vir_table)
+
+    # MAG table (open-world assembly arm, Plan 6 #3)
+    if mags:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Metagenome-Assembled Genomes (MAGs)", heading2_style))
+        mag_data = [["Bin", "GTDB Taxonomy", "Complete (%)", "Contam (%)", "Contigs", "Size (Mb)", "Grade"]]
+        for m in mags:
+            # ponytail: renderer grades on CheckM QC only; the marker rescue
+            # (completeness=None + pathogenicity markers -> C) is JSON-only.
+            g = grade_mag(m)
+            gc = _GRADE_COLORS.get(g, colors.black)
+            mag_data.append([
+                Paragraph(m.bin_id, styles["Normal"]),
+                Paragraph(m.taxonomy or "unclassified", styles["Normal"]),
+                "—" if m.completeness is None else f"{m.completeness:.1f}",
+                "—" if m.contamination is None else f"{m.contamination:.1f}",
+                str(m.n_contigs),
+                f"{m.total_bp / 1e6:.2f}",
+                Paragraph(f'<font color="{gc}"><b>{g.value}</b></font>', styles["Normal"]),
+            ])
+        mag_table = Table(mag_data, repeatRows=1)
+        mag_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTSIZE", (0, 1), (-1, -1), 9),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(mag_table)
 
     # Footer
     story.append(Spacer(1, 18))

@@ -8,7 +8,7 @@ from .config import PipelineConfig
 from .em import EMResult
 from .host_remove import HostRemovalMetrics
 from .qc import QCMetrics
-from .report import EvidenceGrade, ReportEntry
+from .report import EvidenceGrade, ReportEntry, grade_mag
 from .sketch import SketchHit
 
 _GRADE_BADGE: dict[EvidenceGrade, tuple[str, str]] = {
@@ -97,6 +97,7 @@ def write_html_report(
     em_result: EMResult,
     amr_hits: list[AMRHit] | None = None,
     virulence_hits: list | None = None,
+    mags: list | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -202,22 +203,29 @@ def write_html_report(
 
     # ── Microbial Findings Card ───────────────────────────────────────────
     if entries:
+        # Absolute-copies column only when a spike-in anchored quantification (Plan 6 #2).
+        show_copies = any(e.absolute_copies is not None for e in entries)
         rows = ""
         for e in entries:
             badge = _badge(e.grade)
             bar = _abund_bar(e.abundance * 100, e.grade)
             contam = '<span class="contam-flag">⚠ contaminant</span>' if e.contaminant_risk else ""
             ci_str = f"{e.ci_lower*100:.1f}–{e.ci_upper*100:.1f}%"
+            copies_cell = ""
+            if show_copies:
+                cval = "—" if e.absolute_copies is None else f"{e.absolute_copies:.3g}"
+                copies_cell = f"\n  <td>{cval}</td>"
             rows += f"""<tr>
   <td><em>{e.organism}</em> {contam}</td>
   <td>{bar}</td>
   <td style="font-size:12px;color:#777">{ci_str}</td>
-  <td>{e.read_count:,}</td>
+  <td>{e.read_count:,}</td>{copies_cell}
   <td>{badge}</td>
 </tr>"""
+        copies_th = "<th>Abs. copies</th>" if show_copies else ""
         findings_html = f"""<table>
   <thead><tr>
-    <th>Organism</th><th>Abundance</th><th>95% CI</th><th>Reads</th><th>Grade</th>
+    <th>Organism</th><th>Abundance</th><th>95% CI</th><th>Reads</th>{copies_th}<th>Grade</th>
   </tr></thead>
   <tbody>{rows}</tbody>
 </table>"""
@@ -290,6 +298,31 @@ def write_html_report(
 <div class="card">
   <div class="card-title">Virulence Factors (VFDB)</div>
   {vir_html}
+</div>
+"""
+
+    # ── MAG Card (open-world assembly arm, Plan 6 #3) ─────────────────────
+    if mags:
+        mag_rows = ""
+        for m in mags:
+            # ponytail: renderer grades on CheckM QC only; the marker rescue
+            # (completeness=None + pathogenicity markers -> C) is JSON-only.
+            comp = "—" if m.completeness is None else f"{m.completeness:.1f}%"
+            contam = "—" if m.contamination is None else f"{m.contamination:.1f}%"
+            mag_rows += (
+                f"<tr><td>{m.bin_id}</td><td><em>{m.taxonomy or 'unclassified'}</em></td>"
+                f"<td>{comp}</td><td>{contam}</td><td>{m.n_contigs}</td>"
+                f"<td>{m.total_bp / 1e6:.2f} Mb</td><td>{_badge(grade_mag(m))}</td></tr>"
+            )
+        html += f"""
+<div class="card">
+  <div class="card-title">Metagenome-Assembled Genomes (MAGs)</div>
+  <table>
+    <thead><tr>
+      <th>Bin</th><th>GTDB Taxonomy</th><th>Completeness</th><th>Contamination</th><th>Contigs</th><th>Size</th><th>Grade</th>
+    </tr></thead>
+    <tbody>{mag_rows}</tbody>
+  </table>
 </div>
 """
 
