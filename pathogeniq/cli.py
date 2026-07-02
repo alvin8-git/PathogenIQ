@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import click
 import numpy as np
@@ -187,18 +188,29 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"Report written to: {report_dir}")
         return
 
-    click.echo("[4/6] Targeted alignment + EM abundance...")
-    align_result = run_targeted_alignment(cfg, nonhuman, hits)
-    em_result = em_abundance(align_result.alignment_matrix)
-    ci_lower, ci_upper = bootstrap_ci(
-        align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap, n_jobs=cfg.threads,
-    )
-    _mark("align_em")
+    # F2: MEGAHIT (the long pole) needs only the non-host reads, so start it NOW in a
+    # worker thread and let the targeted arm (align + EM) run concurrently — megahit is
+    # a subprocess (releases the GIL), so the thread genuinely overlaps it. Joined just
+    # below before AMR. Hides align+EM wall-time behind the assembly.
+    _assembly_pool = ThreadPoolExecutor(max_workers=1)
+    contigs_future = _assembly_pool.submit(run_megahit, cfg, nonhuman)
+    try:
+        click.echo("[4/6] Targeted alignment + EM abundance...")
+        align_result = run_targeted_alignment(cfg, nonhuman, hits)
+        em_result = em_abundance(align_result.alignment_matrix)
+        ci_lower, ci_upper = bootstrap_ci(
+            align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap, n_jobs=cfg.threads,
+        )
+        _mark("align_em")
 
-    click.echo("[5/6] AMR & virulence screening...")
-    # Assemble once: AMR/virulence (and the viral arm) screen the contigs, not the
-    # millions of raw reads — abricate-on-reads was the pipeline's slowest stage.
-    contigs = run_megahit(cfg, nonhuman)
+        click.echo("[5/6] AMR & virulence screening...")
+        # Assemble once: AMR/virulence (and the viral arm) screen the contigs, not the
+        # millions of raw reads — abricate-on-reads was the pipeline's slowest stage.
+        contigs = contigs_future.result()   # join the background assembly (F2)
+    finally:
+        # Always release the worker (a targeted-arm error must not leave a non-daemon
+        # thread pinning the process at exit while MEGAHIT finishes).
+        _assembly_pool.shutdown(wait=False)
     if contigs is None:
         click.echo("      Assembly unavailable (megahit missing) — AMR/virulence skipped")
     # Attribute contig-based hits back to a finding: map each contig to the
