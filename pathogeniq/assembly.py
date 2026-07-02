@@ -22,6 +22,7 @@ import csv
 import io
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -161,12 +162,20 @@ def run_gtdbtk(cfg: PipelineConfig, bins: list[Path]) -> dict[str, str]:
     bindir = bins[0].parent
     out = cfg.output_dir / "assembly" / "gtdbtk"
     try:
+        # ponytail: no --skip_ani_screen — gtdbtk 2.7.2 removed it (older versions
+        # required it); 2.7.2 runs the skani ANI screen by default (skani DB present).
         subprocess.run(
             ["gtdbtk", "classify_wf", "--genome_dir", str(bindir), "--out_dir", str(out),
-             "-x", "fa", "--cpus", str(cfg.threads), "--skip_ani_screen"],
+             "-x", "fa", "--cpus", str(cfg.threads)],
             capture_output=True, check=True,
         )
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        # Non-blocking, but do NOT swallow silently: a bad flag / OOM here would
+        # otherwise leave every MAG unnamed with no trace (this exact silent swallow
+        # hid the removed-flag bug for a whole air run).
+        err = (e.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        print(f"WARN: gtdbtk classify_wf failed, MAGs left unnamed: "
+              f"{err[-1] if err else f'exit {e.returncode}'}", file=sys.stderr)
         return {}
     taxa: dict[str, str] = {}
     for name in ("gtdbtk.bac120.summary.tsv", "gtdbtk.ar53.summary.tsv"):

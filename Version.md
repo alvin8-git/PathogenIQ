@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AMR + VFDB now screen assembled contigs, not raw reads** — ~100× fewer sequences to align and clean full-length gene calls (measured: abricate-on-reads was ~16 min/DB on a 6.5 M-read air sample). The same contig set is shared with the viral arm, so assembly is paid for once.
 - **EM bootstrap CIs parallelized across processes** — the resampling loop now fans out over cores.
 
+### Fixed
+- **GTDB-Tk MAG taxonomy silently failing** (`assembly.py`) — `classify_wf` was passed `--skip_ani_screen`, a flag **removed in GTDB-Tk 2.7.2**, so every invocation died with `unrecognized arguments` (exit 2) before any output and the non-blocking `except` swallowed it, leaving every recovered MAG with `taxonomy: None`. Dropped the flag (2.7.2 runs the skani ANI screen by default) and made the failure **loud** (warn to stderr with the error tail instead of silent `{}`). Verified end-to-end on the aircraft filters: bins now classify via the ANI screen in ~1 s (no pplacer) to *Novosphingobium panipatense*, *Sphingomonas hankookensis*, and *Methylobacterium radiotolerans* — the expected environmental dominants.
+
 ---
 
 ## [0.4.1] — 2026-06-24 — AMR/VFDB Organism Attribution
