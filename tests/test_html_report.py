@@ -91,6 +91,19 @@ def test_html_report_no_amr_message(tmp_path):
     assert "No AMR genes detected" in content
 
 
+def test_html_report_amr_collapsible_sortable(tmp_path):
+    cfg = _cfg(tmp_path)
+    qc, hr, hits, entries, em = _inputs(tmp_path)
+    amr = [AMRHit(f"gene{i}", "beta-lactam", 99.0, 95.0, "Escherichia coli", "card")
+           for i in range(8)]
+    content = write_html_report(cfg, qc, hr, hits, entries, em, amr_hits=amr).read_text()
+    assert 'class="table-scroll"' in content   # wide table stays in the page
+    assert 'class="sortable"' in content        # click-to-sort headers
+    assert 'class="extra"' in content           # rows past the first 5 collapsed
+    assert "Show 3 more" in content             # 8 hits -> 3 behind the toggle
+    assert "<script>" in content                # sort/toggle JS present
+
+
 def test_html_report_with_mags(tmp_path):
     from pathogeniq.assembly import MAG
     cfg = _cfg(tmp_path)

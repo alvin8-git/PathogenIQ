@@ -70,6 +70,18 @@ em { font-style: italic; }
 .no-data { color: #999; font-style: italic; font-size: 13px; padding: 12px 0; }
 footer { text-align: center; color: #999; font-size: 12px; margin-top: 32px; padding-top: 16px;
          border-top: 1px solid #e0e0e0; }
+/* keep wide tables (AMR/VFDB/MAG) inside the page: wrap long cell text, scroll if still wide */
+.table-scroll { overflow-x: auto; }
+td, th { overflow-wrap: anywhere; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable::after { content: ' \\2195'; opacity: .35; font-size: 10px; }
+th.sort-asc::after { content: ' \\2191'; opacity: 1; }
+th.sort-desc::after { content: ' \\2193'; opacity: 1; }
+tr.extra { display: none; }
+table.expanded tr.extra { display: table-row; }
+.show-more { margin-top: 10px; cursor: pointer; background: #e8eaf6; color: #1a237e;
+             border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; }
+.show-more:hover { background: #d5d9f0; }
 """
 
 
@@ -86,6 +98,57 @@ def _abund_bar(pct: float, grade: EvidenceGrade) -> str:
         f'<div class="abund-bar-bg"><div class="abund-bar-fill" style="width:{width:.1f}%;background:{bg}"></div></div>'
         f'<span>{pct:.2f}%</span></div>'
     )
+
+
+def _sortable_table(table_id: str, headers: list[str], rows: list[list[str]],
+                    *, collapse_after: int = 5) -> str:
+    """A width-safe, click-to-sort table. Rows past ``collapse_after`` are hidden
+    behind a native "Show N more" button (rows/cols are HTML-safe strings the caller
+    already escaped/formatted). Sorting + toggle are handled by the shared JS block."""
+    thead = "".join(f'<th class="sortable">{h}</th>' for h in headers)
+    body = ""
+    for i, row in enumerate(rows):
+        cls = ' class="extra"' if i >= collapse_after else ""
+        cells = "".join(f"<td>{c}</td>" for c in row)
+        body += f"<tr{cls}>{cells}</tr>"
+    html = (f'<div class="table-scroll"><table id="{table_id}" class="sortable">'
+            f'<thead><tr>{thead}</tr></thead><tbody>{body}</tbody></table></div>')
+    hidden = len(rows) - collapse_after
+    if hidden > 0:
+        label = f"Show {hidden} more ▾"
+        html += (f'<button class="show-more" data-target="{table_id}" '
+                 f'data-more="{label}" data-less="Show fewer ▴">{label}</button>')
+    return html
+
+
+# Vanilla JS (no deps): click a header to sort (numeric auto-detected), click
+# "Show N more" to reveal the collapsed rows. Delegated so it covers every table.
+_TABLE_JS = """
+<script>
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('.show-more');
+  if (btn) {
+    var t = document.getElementById(btn.dataset.target);
+    var open = t.classList.toggle('expanded');
+    btn.textContent = open ? btn.dataset.less : btn.dataset.more;
+    return;
+  }
+  var th = e.target.closest('th.sortable');
+  if (!th) return;
+  var table = th.closest('table'), tb = table.tBodies[0];
+  var i = Array.prototype.indexOf.call(th.parentNode.children, th);
+  var asc = !th.classList.contains('sort-asc');
+  th.parentNode.querySelectorAll('th').forEach(function (h) { h.classList.remove('sort-asc', 'sort-desc'); });
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+  Array.prototype.slice.call(tb.rows).sort(function (a, b) {
+    var x = a.cells[i].textContent.trim(), y = b.cells[i].textContent.trim();
+    var nx = parseFloat(x), ny = parseFloat(y), cmp;
+    cmp = (!isNaN(nx) && !isNaN(ny)) ? nx - ny : x.localeCompare(y);
+    return asc ? cmp : -cmp;
+  }).forEach(function (r) { tb.appendChild(r); });
+});
+</script>
+"""
 
 
 def write_html_report(
@@ -255,18 +318,16 @@ def write_html_report(
 
     # ── AMR Card ──────────────────────────────────────────────────────────
     if amr_hits:
-        amr_rows = "".join(
-            f"<tr><td>{h.gene}</td><td>{h.drug_class}</td>"
-            f"<td>{h.identity_pct:.1f}%</td><td>{h.coverage_pct:.1f}%</td>"
-            f"<td><em>{h.organism_match}</em></td><td>{h.database}</td></tr>"
+        amr_rows = [
+            [h.gene, h.drug_class, f"{h.identity_pct:.1f}%", f"{h.coverage_pct:.1f}%",
+             f"<em>{h.organism_match}</em>", h.database]
             for h in amr_hits
+        ]
+        amr_html = _sortable_table(
+            "amr-table",
+            ["Gene", "Drug Class", "Identity", "Coverage", "Organism", "Database"],
+            amr_rows,
         )
-        amr_html = f"""<table>
-  <thead><tr>
-    <th>Gene</th><th>Drug Class</th><th>Identity</th><th>Coverage</th><th>Organism</th><th>Database</th>
-  </tr></thead>
-  <tbody>{amr_rows}</tbody>
-</table>"""
     else:
         amr_html = '<p class="no-data">No AMR genes detected (ABRicate not run or no hits above threshold).</p>'
 
@@ -279,18 +340,16 @@ def write_html_report(
 
     # ── Virulence Card (VFDB) ─────────────────────────────────────────────
     if virulence_hits:
-        vir_rows = "".join(
-            f"<tr><td>{h.gene}</td><td>{h.factor}</td>"
-            f"<td>{h.identity_pct:.1f}%</td><td>{h.coverage_pct:.1f}%</td>"
-            f"<td><em>{h.organism_match}</em></td><td>{h.database}</td></tr>"
+        vir_rows = [
+            [h.gene, h.factor, f"{h.identity_pct:.1f}%", f"{h.coverage_pct:.1f}%",
+             f"<em>{h.organism_match}</em>", h.database]
             for h in virulence_hits
+        ]
+        vir_html = _sortable_table(
+            "vfdb-table",
+            ["Gene", "Virulence Factor", "Identity", "Coverage", "Organism", "Database"],
+            vir_rows,
         )
-        vir_html = f"""<table>
-  <thead><tr>
-    <th>Gene</th><th>Virulence Factor</th><th>Identity</th><th>Coverage</th><th>Organism</th><th>Database</th>
-  </tr></thead>
-  <tbody>{vir_rows}</tbody>
-</table>"""
     else:
         vir_html = '<p class="no-data">No virulence factors detected (VFDB not run or no hits above threshold).</p>'
 
@@ -303,26 +362,25 @@ def write_html_report(
 
     # ── MAG Card (open-world assembly arm, Plan 6 #3) ─────────────────────
     if mags:
-        mag_rows = ""
+        mag_rows = []
         for m in mags:
             # ponytail: renderer grades on CheckM QC only; the marker rescue
             # (completeness=None + pathogenicity markers -> C) is JSON-only.
             comp = "—" if m.completeness is None else f"{m.completeness:.1f}%"
             contam = "—" if m.contamination is None else f"{m.contamination:.1f}%"
-            mag_rows += (
-                f"<tr><td>{m.bin_id}</td><td><em>{m.taxonomy or 'unclassified'}</em></td>"
-                f"<td>{comp}</td><td>{contam}</td><td>{m.n_contigs}</td>"
-                f"<td>{m.total_bp / 1e6:.2f} Mb</td><td>{_badge(grade_mag(m))}</td></tr>"
-            )
+            mag_rows.append([
+                m.bin_id, f"<em>{m.taxonomy or 'unclassified'}</em>", comp, contam,
+                str(m.n_contigs), f"{m.total_bp / 1e6:.2f} Mb", _badge(grade_mag(m)),
+            ])
+        mag_table = _sortable_table(
+            "mag-table",
+            ["Bin", "GTDB Taxonomy", "Completeness", "Contamination", "Contigs", "Size", "Grade"],
+            mag_rows,
+        )
         html += f"""
 <div class="card">
   <div class="card-title">Metagenome-Assembled Genomes (MAGs)</div>
-  <table>
-    <thead><tr>
-      <th>Bin</th><th>GTDB Taxonomy</th><th>Completeness</th><th>Contamination</th><th>Contigs</th><th>Size</th><th>Grade</th>
-    </tr></thead>
-    <tbody>{mag_rows}</tbody>
-  </table>
+  {mag_table}
 </div>
 """
 
@@ -330,6 +388,7 @@ def write_html_report(
     html += f"""
 <footer>PathogenIQ v0.1 &nbsp;|&nbsp; Generated {now} &nbsp;|&nbsp; For research use only</footer>
 </div>
+{_TABLE_JS}
 </body>
 </html>
 """
