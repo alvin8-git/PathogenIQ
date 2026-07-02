@@ -70,6 +70,36 @@ def write_pdf_report(
         spaceAfter=8,
         spaceBefore=12,
     )
+    # reportlab only wraps text inside a Paragraph (bare strings overflow), so every
+    # text cell is wrapped in _p() and each table gets explicit colWidths summing to
+    # the usable page width — long gene names / GTDB lineages now wrap instead of
+    # running off the page.
+    cell_style = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=10)
+    header_style = ParagraphStyle("CellHead", parent=styles["Normal"], fontSize=9, leading=11)
+    usable_w = letter[0] - doc.leftMargin - doc.rightMargin
+
+    def _p(text):
+        return Paragraph(str(text), cell_style)
+
+    _TABLE_STYLE = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTSIZE", (0, 1), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ])
+
+    def _table(headers, rows, weights):
+        """A width-safe table: headers/text cells wrap, columns sized by `weights`
+        (proportional, normalized to the usable page width)."""
+        head = [Paragraph(f"<b>{h}</b>", header_style) for h in headers]
+        total = sum(weights)
+        col_w = [usable_w * w / total for w in weights]
+        t = Table([head] + rows, repeatRows=1, colWidths=col_w)
+        t.setStyle(_TABLE_STYLE)
+        return t
 
     story: list = []
 
@@ -94,11 +124,11 @@ def write_pdf_report(
         if show_copies:
             header.append("Abs. copies")
         header += ["Grade", "Contaminant"]
-        findings_data = [header]
+        rows = []
         for e in entries:
             grade_color = _GRADE_COLORS.get(e.grade, colors.black)
             row = [
-                e.organism,
+                _p(f"<i>{e.organism}</i>"),
                 f"{e.abundance * 100:.2f}",
                 f"{e.ci_lower * 100:.2f}",
                 f"{e.ci_upper * 100:.2f}",
@@ -107,24 +137,12 @@ def write_pdf_report(
             if show_copies:
                 row.append("—" if e.absolute_copies is None else f"{e.absolute_copies:.3g}")
             row += [
-                Paragraph(f'<font color="{grade_color}"><b>{e.grade.value}</b></font>', styles["Normal"]),
+                Paragraph(f'<font color="{grade_color}"><b>{e.grade.value}</b></font>', cell_style),
                 "Yes" if e.contaminant_risk else "No",
             ]
-            findings_data.append(row)
-        findings_table = Table(findings_data, repeatRows=1)
-        findings_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        story.append(findings_table)
+            rows.append(row)
+        weights = [3.0, 1.2, 1.0, 1.0, 0.9] + ([1.1] if show_copies else []) + [0.7, 1.1]
+        story.append(_table(header, rows, weights))
     else:
         story.append(Paragraph("No organisms detected.", styles["Normal"]))
 
@@ -132,91 +150,47 @@ def write_pdf_report(
     if amr_hits:
         story.append(Spacer(1, 12))
         story.append(Paragraph("Antimicrobial Resistance Genes", heading2_style))
-        amr_data = [["Gene", "Drug Class", "Identity (%)", "Coverage (%)", "Organism Match"]]
-        for h in amr_hits:
-            amr_data.append([
-                h.gene,
-                h.drug_class,
-                f"{h.identity_pct:.1f}",
-                f"{h.coverage_pct:.1f}",
-                h.organism_match,
-            ])
-        amr_table = Table(amr_data, repeatRows=1)
-        amr_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        story.append(amr_table)
+        header = ["Gene", "Drug Class", "Identity (%)", "Coverage (%)", "Organism Match"]
+        rows = [
+            [_p(h.gene), _p(h.drug_class), f"{h.identity_pct:.1f}", f"{h.coverage_pct:.1f}",
+             _p(f"<i>{h.organism_match}</i>")]
+            for h in amr_hits
+        ]
+        story.append(_table(header, rows, [1.6, 2.2, 1.0, 1.0, 2.2]))
 
     # Virulence factor table (VFDB)
     if virulence_hits:
         story.append(Spacer(1, 12))
         story.append(Paragraph("Virulence Factors (VFDB)", heading2_style))
-        vir_data = [["Gene", "Virulence Factor", "Identity (%)", "Coverage (%)", "Organism Match"]]
-        for h in virulence_hits:
-            vir_data.append([
-                h.gene,
-                h.factor,
-                f"{h.identity_pct:.1f}",
-                f"{h.coverage_pct:.1f}",
-                h.organism_match,
-            ])
-        vir_table = Table(vir_data, repeatRows=1)
-        vir_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        story.append(vir_table)
+        header = ["Gene", "Virulence Factor", "Identity (%)", "Coverage (%)", "Organism Match"]
+        rows = [
+            [_p(h.gene), _p(h.factor), f"{h.identity_pct:.1f}", f"{h.coverage_pct:.1f}",
+             _p(f"<i>{h.organism_match}</i>")]
+            for h in virulence_hits
+        ]
+        story.append(_table(header, rows, [1.6, 2.2, 1.0, 1.0, 2.2]))
 
     # MAG table (open-world assembly arm, Plan 6 #3)
     if mags:
         story.append(Spacer(1, 12))
         story.append(Paragraph("Metagenome-Assembled Genomes (MAGs)", heading2_style))
-        mag_data = [["Bin", "GTDB Taxonomy", "Complete (%)", "Contam (%)", "Contigs", "Size (Mb)", "Grade"]]
+        header = ["Bin", "GTDB Taxonomy", "Complete (%)", "Contam (%)", "Contigs", "Size (Mb)", "Grade"]
+        rows = []
         for m in mags:
             # ponytail: renderer grades on CheckM QC only; the marker rescue
             # (completeness=None + pathogenicity markers -> C) is JSON-only.
             g = grade_mag(m)
             gc = _GRADE_COLORS.get(g, colors.black)
-            mag_data.append([
-                Paragraph(m.bin_id, styles["Normal"]),
-                Paragraph(m.taxonomy or "unclassified", styles["Normal"]),
+            rows.append([
+                _p(m.bin_id),
+                _p(f"<i>{m.taxonomy or 'unclassified'}</i>"),
                 "—" if m.completeness is None else f"{m.completeness:.1f}",
                 "—" if m.contamination is None else f"{m.contamination:.1f}",
                 str(m.n_contigs),
                 f"{m.total_bp / 1e6:.2f}",
-                Paragraph(f'<font color="{gc}"><b>{g.value}</b></font>', styles["Normal"]),
+                Paragraph(f'<font color="{gc}"><b>{g.value}</b></font>', cell_style),
             ])
-        mag_table = Table(mag_data, repeatRows=1)
-        mag_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-            ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE", (0, 1), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        story.append(mag_table)
+        story.append(_table(header, rows, [0.9, 3.0, 1.0, 0.9, 0.8, 0.9, 0.7]))
 
     # Footer
     story.append(Spacer(1, 18))
