@@ -1,3 +1,5 @@
+import time
+
 import click
 import numpy as np
 from dataclasses import replace
@@ -84,9 +86,21 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
         amr_db=amr_db,
     )
 
+    # Stage timing (F5): per-stage wall seconds, echoed at the end + stored in the
+    # report JSON so runtime is measured, not guessed. _mark(label) records the
+    # elapsed since the previous mark.
+    timings: dict[str, float] = {}
+    _last = [time.perf_counter()]
+
+    def _mark(label: str) -> None:
+        now = time.perf_counter()
+        timings[label] = round(now - _last[0], 1)
+        _last[0] = now
+
     click.echo("[1/6] QC & adapter trimming...")
     filtered, qc_metrics = run_qc(cfg)
     click.echo(f"      {qc_metrics.passing_reads:,} reads pass QC")
+    _mark("qc")
 
     click.echo("[2/6] Host removal...")
     nonhuman, hr_metrics = run_host_removal(cfg, filtered)
@@ -94,6 +108,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     nonhuman, n_phix = run_phix_removal(cfg, nonhuman)
     if n_phix:
         click.echo(f"      {n_phix:,} PhiX spike-in reads removed")
+    _mark("host_removal")
 
     # Open-world novelty trigger runs on the non-host reads BEFORE the targeted
     # arm, so a sample with no DB hit but novel content is still flagged.
@@ -107,22 +122,26 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
             click.echo(f"      {novelty.unclassified_fraction:.1%} of reads unclassified"
                        + (" — FLAGGED: novel/uncatalogued content, consider --assemble"
                           if novelty.flagged else ""))
+    if novelty_flag:
+        _mark("novelty")
 
     def _discovery_arms(contigs=None):
         """Open-world arms (assembly MAGs + viral) on the non-host reads. Run
         regardless of targeted hits so novel/viral content with no DB match is
-        still recovered. ``contigs`` (the shared megahit assembly used for AMR) is
-        reused for the viral arm to avoid re-assembling."""
+        still recovered. Assembly is the costliest stage, so it is done **once**:
+        ``contigs`` (the shared megahit assembly built for AMR) is reused by BOTH
+        the MAG and viral arms; if the caller has none (the zero-hit branch), one
+        assembly is built here and shared."""
         m = v = None
+        if (assemble or viral_flag) and contigs is None:
+            contigs = run_megahit(cfg, nonhuman)
         if assemble:
             click.echo("      De novo assembly + MAG recovery (this is slow)...")
-            m = run_assembly_stage(cfg, nonhuman)
+            m = run_assembly_stage(cfg, nonhuman, contigs=contigs)
             click.echo(f"      {len(m)} MAG(s) recovered" if m else
                        "      No MAGs recovered (assembly tools/DBs missing or no bins)")
         if viral_flag:
             click.echo("      Viral identification arm (geNomad + CheckV)...")
-            if contigs is None:
-                contigs = run_megahit(cfg, nonhuman)
             v = run_viral_stage(cfg, contigs) if contigs is not None else []
             click.echo(f"      {len(v)} viral contig(s) identified" if v else
                        "      No viral contigs (geNomad/DBs missing or none found)")
@@ -138,6 +157,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     click.echo("[3/6] Sketch screening...")
     hits = run_sketch_screen(cfg, nonhuman)
     click.echo(f"      {len(hits)} candidate organisms shortlisted")
+    _mark("sketch")
 
     if not hits:
         click.echo("No targeted pathogens detected above threshold.")
@@ -159,6 +179,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     ci_lower, ci_upper = bootstrap_ci(
         align_result.alignment_matrix, n_bootstrap=cfg.n_bootstrap, n_jobs=cfg.threads,
     )
+    _mark("align_em")
 
     click.echo("[5/6] AMR & virulence screening...")
     # Assemble once: AMR/virulence (and the viral arm) screen the contigs, not the
@@ -180,6 +201,7 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                                           contig_to_org=contig_to_org)
     if virulence_hits:
         click.echo(f"      {len(virulence_hits)} virulence factor(s) detected (VFDB)")
+    _mark("assembly_amr")
 
     click.echo("[6/6] Background correction & report...")
     background = _resolve_background(cfg, ntc_fastq, background_table, no_background)
@@ -210,10 +232,12 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
                        f"absolute quantification unavailable (check spike input)")
 
     mags, viral, triage = _discovery_arms(contigs)
+    _mark("discovery")
 
     report_dir = write_report(cfg, entries, em_result, amr_hits=amr_hits,
                               virulence_hits=virulence_hits, spike_info=spike_info, mags=mags,
-                              novelty=novelty, viral=viral, pathogenicity=triage)
+                              novelty=novelty, viral=viral, pathogenicity=triage,
+                              timings=timings)
 
     if not no_pdf:
         pdf_path = write_pdf_report(cfg, entries, amr_hits, virulence_hits=virulence_hits, mags=mags)
@@ -226,6 +250,8 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     click.echo(f"HTML report:       {html_path}")
 
     click.echo(f"Report written to: {report_dir}")
+    click.echo("Stage timings (s): "
+               + "  ".join(f"{k}={v:g}" for k, v in timings.items()))
 
 
 def _classify_taxon_counts(cfg: PipelineConfig, fastq: Path) -> tuple[dict[str, int], int]:

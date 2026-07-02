@@ -69,6 +69,23 @@ def test_run_assembly_stage_skips_without_megahit(tmp_path):
         assert run_assembly_stage(_cfg(tmp_path), tmp_path / "reads.fq.gz") == []
 
 
+def test_run_assembly_stage_reuses_passed_contigs(tmp_path):
+    # F1 min-wedge: when the caller hands over an already-built assembly (the AMR
+    # arm's contigs), the MAG stage must NOT assemble again — one MEGAHIT per run.
+    b1 = tmp_path / "bins" / "bin.1.fa"
+    b1.parent.mkdir()
+    b1.write_text(">c1\nACGT\n")
+    with patch("pathogeniq.assembly.run_megahit") as megahit, \
+         patch("pathogeniq.assembly._contig_depths", return_value=tmp_path / "d.txt"), \
+         patch("pathogeniq.assembly.run_metabat2", return_value=[b1]), \
+         patch("pathogeniq.assembly.run_checkm", return_value={}), \
+         patch("pathogeniq.assembly.run_gtdbtk", return_value={}):
+        mags = run_assembly_stage(_cfg(tmp_path), tmp_path / "reads.fq.gz",
+                                  contigs=tmp_path / "shared_contigs.fa")
+    megahit.assert_not_called()
+    assert len(mags) == 1
+
+
 def test_run_assembly_stage_filters_low_quality_and_builds_mags(tmp_path):
     bindir = tmp_path / "bins"
     bindir.mkdir()

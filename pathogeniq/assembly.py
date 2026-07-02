@@ -189,6 +189,7 @@ def run_assembly_stage(
     cfg: PipelineConfig,
     reads: Path,
     *,
+    contigs: Path | None = None,
     min_completeness: float = 50.0,
     max_contamination: float = 10.0,
 ) -> list[MAG]:
@@ -196,8 +197,13 @@ def run_assembly_stage(
     MAGs (CheckM completeness ≥ ``min_completeness`` and contamination ≤
     ``max_contamination`` — the paper's thresholds). When CheckM is unavailable
     the quality filter is skipped (every bin is kept, completeness=None) rather
-    than dropping all bins. Returns [] if assembly/binning produced nothing."""
-    contigs = run_megahit(cfg, reads)
+    than dropping all bins. Returns [] if assembly/binning produced nothing.
+
+    ``contigs`` lets the caller pass an already-built MEGAHIT assembly (the AMR
+    arm builds one from the same reads) so we do NOT assemble twice — assembly is
+    the pipeline's costliest stage. Falls back to assembling ``reads`` if None."""
+    if contigs is None:
+        contigs = run_megahit(cfg, reads)
     if contigs is None:
         return []
     depth = _contig_depths(cfg, contigs, reads)

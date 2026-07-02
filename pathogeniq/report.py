@@ -259,6 +259,7 @@ def write_report(
     novelty=None,
     viral: list | None = None,
     pathogenicity: list | None = None,
+    timings: dict | None = None,
 ) -> Path:
     out = cfg.output_dir / "report"
     out.mkdir(parents=True, exist_ok=True)
@@ -403,6 +404,8 @@ def write_report(
             }
             for a in pathogenicity
         ]
+    if timings:
+        payload["stage_seconds"] = timings
     if novelty is not None:
         payload["novelty"] = {
             "total_reads": novelty.total_reads,
