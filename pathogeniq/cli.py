@@ -13,7 +13,7 @@ from .background import (
 )
 from .config import PipelineConfig, ReadType, SpecimenType
 from .em import EMResult, bootstrap_ci, em_abundance
-from .host_remove import run_host_removal, run_phix_removal
+from .host_remove import HostRemovalMetrics, run_host_removal, run_phix_removal
 from .quantify import quantify_entries
 from .assembly import run_assembly_stage, run_megahit
 from .novelty import assess_novelty
@@ -39,6 +39,10 @@ def cli():
 @click.option("--host-ref", "host_reference", required=True, type=click.Path(exists=True, path_type=Path))
 @click.option("--specimen", type=click.Choice([s.value for s in SpecimenType]), required=True)
 @click.option("--read-type", type=click.Choice([r.value for r in ReadType]), default="short", show_default=True)
+@click.option("--skip-host-removal", is_flag=True, default=False,
+              help="Skip host (human) read removal — for host-free specimens like air "
+                   "filters (~100%% microbial), where the full bwa-mem2 vs GRCh38 pass is "
+                   "wasted overhead. PhiX removal still runs. Do NOT use on clinical fluids.")
 @click.option("--threads", default=8, show_default=True)
 @click.option("--sketch-threshold", default=0.003, show_default=True)
 @click.option("--n-bootstrap", default=100, show_default=True)
@@ -67,7 +71,7 @@ def cli():
               help="Run the viral identification arm (geNomad + CheckV) on the assembly to "
                    "detect airborne viruses not in the bacterial DBs (slow; tools/DBs required)")
 def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
-        threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
+        skip_host_removal, threads, sketch_threshold, n_bootstrap, amr_db, no_pdf,
         ntc_fastq, background_table, no_background,
         spike_taxon, spike_copies, sample_volume, assemble, novelty_flag, viral_flag):
     """Run the full PathogenIQ pipeline."""
@@ -103,8 +107,18 @@ def run(input_fastq, output_dir, db_tier1, host_reference, specimen, read_type,
     _mark("qc")
 
     click.echo("[2/6] Host removal...")
-    nonhuman, hr_metrics = run_host_removal(cfg, filtered)
-    click.echo(f"      Microbial fraction: {hr_metrics.microbial_fraction:.2%}")
+    if skip_host_removal:
+        # Host-free specimen (e.g. air): skip the full bwa-mem2 vs GRCh38 pass, which
+        # maps ~nothing yet is a top runtime cost. Reads carry through unchanged.
+        nonhuman = filtered
+        hr_metrics = HostRemovalMetrics(
+            total_reads=qc_metrics.passing_reads, human_reads=0,
+            nonhuman_reads=qc_metrics.passing_reads,
+        )
+        click.echo("      Skipped (--skip-host-removal): treating all reads as microbial")
+    else:
+        nonhuman, hr_metrics = run_host_removal(cfg, filtered)
+        click.echo(f"      Microbial fraction: {hr_metrics.microbial_fraction:.2%}")
     nonhuman, n_phix = run_phix_removal(cfg, nonhuman)
     if n_phix:
         click.echo(f"      {n_phix:,} PhiX spike-in reads removed")

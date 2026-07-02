@@ -141,6 +141,38 @@ def test_cli_run_invokes_pipeline(tmp_path):
     assert result.exit_code == 0, result.output
 
 
+def test_cli_run_skip_host_removal(tmp_path):
+    """--skip-host-removal (F4): host removal is bypassed for host-free specimens;
+    run_host_removal must NOT be called and the pipeline still completes."""
+    runner = CliRunner()
+    for name in ("s.fq.gz", "db.sbt.zip", "ref.fa"):
+        (tmp_path / name).touch()
+    fake_em = EMResult(abundances=np.array([1.0]), n_reads=10, n_organisms=1, iterations=3)
+    fake_align = AlignmentResult(alignment_matrix=np.ones((10, 1)), organism_names=["org1"],
+                                 read_ids=["r1"], taxon_ids=["GCF_000005845.2"])
+    with patch("pathogeniq.cli.run_qc", return_value=(tmp_path / "filt.fq.gz", QCMetrics(100, 90))), \
+         patch("pathogeniq.cli.run_host_removal",
+               side_effect=AssertionError("host removal must be skipped")), \
+         patch("pathogeniq.cli.run_phix_removal", side_effect=lambda cfg, fq: (fq, 0)), \
+         patch("pathogeniq.cli.run_sketch_screen", return_value=[SketchHit("org1", 0.05, tmp_path / "g.fa")]), \
+         patch("pathogeniq.cli.run_targeted_alignment", return_value=fake_align), \
+         patch("pathogeniq.cli.em_abundance", return_value=fake_em), \
+         patch("pathogeniq.cli.bootstrap_ci", return_value=(np.array([0.9]), np.array([1.0]))), \
+         patch("pathogeniq.cli.run_megahit", return_value=None), \
+         patch("pathogeniq.cli.run_amr_screen", return_value=[]), \
+         patch("pathogeniq.cli.run_virulence_screen", return_value=[]), \
+         patch("pathogeniq.cli.write_report", return_value=tmp_path / "report"), \
+         patch("pathogeniq.cli.write_pdf_report", return_value=tmp_path / "r.pdf"), \
+         patch("pathogeniq.cli.write_html_report", return_value=tmp_path / "r.html"):
+        result = runner.invoke(cli, [
+            "run", "--input", str(tmp_path / "s.fq.gz"), "--output", str(tmp_path / "out"),
+            "--db", str(tmp_path / "db.sbt.zip"), "--host-ref", str(tmp_path / "ref.fa"),
+            "--specimen", "air", "--read-type", "short", "--skip-host-removal",
+        ])
+    assert result.exit_code == 0, result.output
+    assert "Skipped (--skip-host-removal)" in result.output
+
+
 def test_cli_run_produces_pdf(tmp_path):
     """End-to-end CLI smoke test: PDF is produced when pipeline succeeds."""
     from unittest.mock import patch, MagicMock
